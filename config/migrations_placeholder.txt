@@ -1,0 +1,6 @@
+Migrations are generated with:
+
+    python manage.py makemigrations
+    python manage.py migrate
+
+This file keeps the empty repository explicit until the first implementation run.

@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-dmquote}
+      POSTGRES_USER: ${DATABASE_USER:-dmquote}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-dmquote}
+    ports:
+      - "5432:5432"
+    volumes:
+      - dmquote_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-dmquote} -d ${DATABASE_NAME:-dmquote}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      DATABASE_HOST: db
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../front
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://localhost:8000/api/v1
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../front:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  dmquote_postgres_data:

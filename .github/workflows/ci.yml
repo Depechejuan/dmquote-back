@@ -1,0 +1,44 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dmquote
+          POSTGRES_USER: dmquote
+          POSTGRES_PASSWORD: dmquote
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dmquote -d dmquote"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      DJANGO_SECRET_KEY: ci-only-secret
+      DJANGO_DEBUG: true
+      DATABASE_NAME: dmquote
+      DATABASE_USER: dmquote
+      DATABASE_PASSWORD: dmquote
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install ".[dev]"
+      - name: Ruff
+        run: ruff check .
+      - name: Django checks
+        run: python manage.py check
+      - name: Tests
+        run: pytest
