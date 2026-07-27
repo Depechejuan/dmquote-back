@@ -1,7 +1,13 @@
 import os
 from pathlib import Path
+from urllib.parse import parse_qsl, unquote, urlparse
+
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+load_dotenv(BASE_DIR / ".env")
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -33,6 +39,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "apps.catalog",
+    "apps.accounts",
     "apps.interviews",
     "apps.transcripts",
     "apps.mentions",
@@ -78,14 +85,27 @@ if os.getenv("DATABASE_ENGINE", "postgresql") == "sqlite":
         }
     }
 else:
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ImproperlyConfigured(
+            "DATABASE_URL must be set when DATABASE_ENGINE is not sqlite."
+        )
+
+    parsed_database_url = urlparse(database_url)
+    if parsed_database_url.scheme not in {"postgres", "postgresql"}:
+        raise ImproperlyConfigured("DATABASE_URL must use the postgres or postgresql scheme.")
+    if not parsed_database_url.path or parsed_database_url.path == "/":
+        raise ImproperlyConfigured("DATABASE_URL must include a database name.")
+
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("DATABASE_NAME", "dmquote"),
-            "USER": os.getenv("DATABASE_USER", "dmquote"),
-            "PASSWORD": os.getenv("DATABASE_PASSWORD", "dmquote"),
-            "HOST": os.getenv("DATABASE_HOST", "localhost"),
-            "PORT": os.getenv("DATABASE_PORT", "5432"),
+            "NAME": unquote(parsed_database_url.path.lstrip("/")),
+            "USER": unquote(parsed_database_url.username or ""),
+            "PASSWORD": unquote(parsed_database_url.password or ""),
+            "HOST": parsed_database_url.hostname or "",
+            "PORT": parsed_database_url.port or 5432,
+            "OPTIONS": dict(parse_qsl(parsed_database_url.query)),
         }
     }
 
