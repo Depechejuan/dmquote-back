@@ -4,6 +4,6 @@ from django.core.management.base import CommandError
 
 
 @pytest.mark.django_db
-def test_dmlive_import_is_opt_in():
-    with pytest.raises(CommandError, match="disabled by default"):
+def test_dmlive_import_requires_a_local_input_file():
+    with pytest.raises(CommandError, match="local --input"):
         call_command("ingest_dmlive")

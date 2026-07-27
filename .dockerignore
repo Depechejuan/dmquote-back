@@ -1,13 +1,11 @@
-.venv/
+.env
+.git
+.gitignore
 __pycache__/
-*.py[cod]
 .pytest_cache/
 .ruff_cache/
-.env
 db.sqlite3
-staticfiles/
 media/
-source_snapshots/
 snapshots/
+staticfiles/
 *.log
-*.egg-info/

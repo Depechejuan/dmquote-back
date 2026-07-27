@@ -14,5 +14,24 @@ The API is available at `http://localhost:8000`, Django Admin at
 `http://localhost:8000/admin/`, and OpenAPI documentation at
 `http://localhost:8000/api/docs/`.
 
-The DM Live importer is disabled by default and contains no live network operation
-in this skeleton. Do not enable it until the source owner has granted permission.
+The DM Live importer accepts local exports only and contains no live network operation.
+
+## Local DM Live imports
+
+Imports read local MediaWiki XML exports or equivalent JSON files; they do not make
+network requests:
+
+```bash
+python manage.py ingest_dmlive \
+  --input /path/to/DM-Live-export.xml \
+  --format auto \
+  --dry-run
+```
+
+Run without `--dry-run` to persist the import. Use `--mark-missing` only when the
+input is a complete source export; it marks absent pages as missing without deleting
+their records. Raw page snapshots are written to the ignored `snapshots/` directory.
+
+JSON input accepts either a top-level list of pages or an object with a `pages` list.
+Each page may contain `page_id`, `namespace`, `title`, and either top-level revision
+fields or a `revision` object with `revision_id`, `timestamp`, and `text`.

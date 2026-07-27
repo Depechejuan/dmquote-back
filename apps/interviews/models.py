@@ -66,6 +66,11 @@ class Interview(models.Model):
         OTHER = "other", "Other"
         UNKNOWN = "unknown", "Unknown"
 
+    class ClassificationStatus(models.TextChoices):
+        INTERVIEW = "interview", "Interview"
+        NEEDS_REVIEW = "needs_review", "Needs review"
+        NOT_INTERVIEW = "not_interview", "Not an interview"
+
     title = models.CharField(max_length=255)
     slug = models.SlugField(max_length=280, unique=True)
     date_year = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -76,6 +81,11 @@ class Interview(models.Model):
     )
     outlet = models.CharField(max_length=255, blank=True)
     medium = models.CharField(max_length=24, choices=Medium.choices, default=Medium.UNKNOWN)
+    classification_status = models.CharField(
+        max_length=16,
+        choices=ClassificationStatus.choices,
+        default=ClassificationStatus.INTERVIEW,
+    )
     location = models.CharField(max_length=255, blank=True)
     source_url = models.URLField(max_length=500)
     source_name = models.CharField(max_length=120, default="DM Live Wiki")
@@ -107,6 +117,7 @@ class Interview(models.Model):
             ),
             models.Index(fields=["publication_status"], name="interview_publication_idx"),
             models.Index(fields=["source_present", "source_domain"], name="interview_source_state_idx"),
+            models.Index(fields=["classification_status"], name="interview_classification_idx"),
         ]
 
     def __str__(self) -> str:
@@ -183,6 +194,7 @@ class SourceSnapshot(models.Model):
     etag = models.CharField(max_length=255, blank=True)
     last_modified = models.CharField(max_length=255, blank=True)
     content_hash = models.CharField(max_length=128, blank=True)
+    snapshot_path = models.CharField(max_length=1000, blank=True)
     source_present = models.BooleanField(default=True)
     status = models.CharField(max_length=20, choices=Status.choices)
     error_message = models.TextField(blank=True)

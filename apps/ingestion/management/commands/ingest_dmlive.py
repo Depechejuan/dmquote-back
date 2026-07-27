@@ -1,30 +1,47 @@
+import json
+from pathlib import Path
+from xml.etree.ElementTree import ParseError
+
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.ingestion.adapters.dmlive import DMLiveAdapter
+from apps.ingestion.importers.dmlive import DMLiveImporter, DMLiveImportError
 
 
 class Command(BaseCommand):
-    help = "Prepare a DM Live import. Network access is opt-in and remains unavailable in the skeleton."
+    help = "Import a local DM Live XML or JSON export without making network requests."
 
     def add_arguments(self, parser):
-        parser.add_argument("--year", type=int)
+        parser.add_argument("--input", help="Path to a local XML or JSON export.")
+        parser.add_argument(
+            "--format",
+            choices=["auto", "xml", "json"],
+            default="auto",
+            help="Input format. Defaults to the file extension.",
+        )
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument(
-            "--allow-network",
+            "--mark-missing",
             action="store_true",
-            help="Explicitly acknowledge that network access has been authorised.",
+            help="Treat the input as a complete export and mark absent source pages as missing.",
         )
 
     def handle(self, *args, **options):
-        if not options["allow_network"]:
-            raise CommandError(
-                "Import is disabled by default. Use --allow-network only after source-owner permission."
-            )
-        if options["dry_run"]:
-            self.stdout.write(self.style.WARNING("Dry run requested; no network operation performed."))
-            return
+        input_name = options.get("input")
+        if not input_name:
+            raise CommandError("A local --input XML or JSON file is required.")
+        if Path(input_name).is_dir():
+            raise CommandError("--input must point to a file, not a directory.")
+
         try:
-            DMLiveAdapter()
-        except RuntimeError as exc:
+            summary = DMLiveImporter().import_file(
+                input_name,
+                input_format=options["format"],
+                dry_run=options["dry_run"],
+                mark_missing=options["mark_missing"],
+            )
+        except (DMLiveImportError, ParseError, ValueError, OSError) as exc:
             raise CommandError(str(exc)) from exc
-        raise CommandError("The source importer is intentionally not implemented in the skeleton.")
+
+        message = json.dumps(summary.as_dict(), ensure_ascii=False, sort_keys=True)
+        style = self.style.WARNING if options["dry_run"] else self.style.SUCCESS
+        self.stdout.write(style(message))
