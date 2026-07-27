@@ -3,7 +3,7 @@ from django.db import models
 
 from apps.catalog.models import Album, Song
 from apps.interviews.models import Interview
-from apps.transcripts.models import TranscriptParagraph
+from apps.transcripts.models import TranscriptParagraph, TranscriptSection
 
 
 class InterviewEntityLink(models.Model):
@@ -20,6 +20,7 @@ class InterviewEntityLink(models.Model):
         SUGGESTED = "suggested", "Suggested"
         VERIFIED = "verified", "Verified"
         REJECTED = "rejected", "Rejected"
+        NEEDS_REVIEW = "needs_review", "Needs review"
 
     interview = models.ForeignKey(
         Interview, on_delete=models.CASCADE, related_name="entity_links"
@@ -37,6 +38,13 @@ class InterviewEntityLink(models.Model):
         blank=True,
         related_name="entity_links",
     )
+    section = models.ForeignKey(
+        TranscriptSection,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="entity_links",
+    )
     scope = models.CharField(max_length=12, choices=Scope.choices, default=Scope.INTERVIEW)
     method = models.CharField(max_length=10, choices=Method.choices, default=Method.MANUAL)
     confidence = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
@@ -46,6 +54,7 @@ class InterviewEntityLink(models.Model):
     start_offset = models.PositiveIntegerField(null=True, blank=True)
     end_offset = models.PositiveIntegerField(null=True, blank=True)
     evidence = models.TextField(blank=True)
+    paragraph_content_hash = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -61,10 +70,27 @@ class InterviewEntityLink(models.Model):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(scope="interview", paragraph__isnull=True)
-                    | models.Q(scope="paragraph", paragraph__isnull=False)
+                    (
+                        models.Q(scope="interview", paragraph__isnull=True, section__isnull=True)
+                        | models.Q(
+                            scope="paragraph",
+                            paragraph__isnull=False,
+                            section__isnull=False,
+                        )
+                    )
                 ),
                 name="link_scope_matches_paragraph",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(start_offset__isnull=True, end_offset__isnull=True)
+                    | models.Q(
+                        start_offset__isnull=False,
+                        end_offset__isnull=False,
+                        end_offset__gte=models.F("start_offset"),
+                    )
+                ),
+                name="link_offsets_are_consistent",
             ),
         ]
 
@@ -73,8 +99,20 @@ class InterviewEntityLink(models.Model):
             raise ValidationError("A link must target exactly one song or album.")
         if self.scope == self.Scope.PARAGRAPH and not self.paragraph_id:
             raise ValidationError("Paragraph scope requires a paragraph.")
+        if self.scope == self.Scope.PARAGRAPH and not self.section_id:
+            raise ValidationError("Paragraph scope requires a section.")
+        if self.scope == self.Scope.INTERVIEW and (self.paragraph_id or self.section_id):
+            raise ValidationError("Interview scope cannot reference a section or paragraph.")
         if self.paragraph_id and self.paragraph.transcript.interview_id != self.interview_id:
             raise ValidationError("The paragraph must belong to the linked interview.")
+        if self.section_id and self.section.transcript.interview_id != self.interview_id:
+            raise ValidationError("The section must belong to the linked interview.")
+        if self.paragraph_id and self.section_id and self.paragraph.section_id != self.section_id:
+            raise ValidationError("The paragraph must belong to the linked section.")
+        if (self.start_offset is None) != (self.end_offset is None):
+            raise ValidationError("Start and end offsets must be provided together.")
+        if self.start_offset is not None and self.end_offset < self.start_offset:
+            raise ValidationError("End offset must not precede start offset.")
 
     def __str__(self) -> str:
         target = self.song or self.album

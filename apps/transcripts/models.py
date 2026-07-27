@@ -26,9 +26,50 @@ class Transcript(models.Model):
         return f"Transcript: {self.interview}"
 
 
+class TranscriptSection(models.Model):
+    class SectionType(models.TextChoices):
+        NOTES = "notes", "Notes"
+        AUDIO = "audio", "Audio"
+        TRANSCRIPT = "transcript", "Transcript"
+        SOURCES = "sources", "Sources"
+        TRACKLIST = "tracklist", "Tracklist"
+        VIDEO = "video", "Video"
+        OTHER = "other", "Other"
+
+    transcript = models.ForeignKey(
+        Transcript, on_delete=models.CASCADE, related_name="sections"
+    )
+    order = models.PositiveIntegerField()
+    heading = models.CharField(max_length=255)
+    level = models.PositiveSmallIntegerField(default=2)
+    section_type = models.CharField(
+        max_length=16, choices=SectionType.choices, default=SectionType.OTHER
+    )
+    source_anchor = models.SlugField(max_length=180, blank=True)
+    publication_status = models.CharField(
+        max_length=24,
+        choices=Interview.PublicationStatus.choices,
+        default=Interview.PublicationStatus.PRIVATE_ONLY,
+    )
+
+    class Meta:
+        ordering = ["order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["transcript", "order"], name="unique_transcript_section_order"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.transcript} — {self.heading}"
+
+
 class TranscriptParagraph(models.Model):
     transcript = models.ForeignKey(
         Transcript, on_delete=models.CASCADE, related_name="paragraphs"
+    )
+    section = models.ForeignKey(
+        TranscriptSection, on_delete=models.CASCADE, related_name="paragraphs"
     )
     order = models.PositiveIntegerField()
     speaker = models.CharField(max_length=160, blank=True)
@@ -42,12 +83,12 @@ class TranscriptParagraph(models.Model):
     )
 
     class Meta:
-        ordering = ["order"]
+        ordering = ["section__order", "order"]
         constraints = [
             models.UniqueConstraint(
-                fields=["transcript", "order"], name="unique_transcript_paragraph_order"
+                fields=["section", "order"], name="unique_section_paragraph_order"
             )
         ]
 
     def __str__(self) -> str:
-        return f"{self.transcript} paragraph {self.order}"
+        return f"{self.transcript} — {self.section.heading} paragraph {self.order}"
