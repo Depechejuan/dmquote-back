@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "source": "DMQuote curated Depeche Mode studio catalogue",
+  "albums": [
+    {
+      "title": "Speak & Spell",
+      "release_year": 1981,
+      "aliases": ["Speak and Spell"],
+      "songs": ["New Life", "Puppets", "Dreaming of Me", "Nodisco", "What's Your Name?", "Photographic", "Tora! Tora! Tora!", "Big Muff", "Any Second Now (Voices)", "Just Can't Get Enough"]
+    },
+    {
+      "title": "A Broken Frame",
+      "release_year": 1982,
+      "songs": ["Leave in Silence", "My Secret Garden", "Monument", "Nothing to Fear", "See You", "Satellite", "The Meaning of Love", "A Photograph of You", "Shouldn't Have Done That", "The Sun & the Rainfall"]
+    },
+    {
+      "title": "Construction Time Again",
+      "release_year": 1983,
+      "songs": ["Love, in Itself", "More Than a Party", "Pipeline", "Everything Counts", "Two Minute Warning", "Shame", "The Landscape Is Changing", "Told You So", "And Then...", "Everything Counts (Reprise)"]
+    },
+    {
+      "title": "Some Great Reward",
+      "release_year": 1984,
+      "songs": ["Something to Do", "Lie to Me", "People Are People", "It Doesn't Matter", "Stories of Old", "Somebody", "Master and Servant", "If You Want", "Blasphemous Rumours"]
+    },
+    {
+      "title": "Black Celebration",
+      "release_year": 1986,
+      "songs": ["Black Celebration", "Fly on the Windscreen", "A Question of Lust", "Sometimes", "It Doesn't Matter Two", "A Question of Time", "Stripped", "Here Is the House", "World Full of Nothing", "Dressed in Black", "New Dress"]
+    },
+    {
+      "title": "Music for the Masses",
+      "release_year": 1987,
+      "songs": ["Never Let Me Down Again", "The Things You Said", "Strangelove", "Sacrifice", "Little 15", "Behind the Wheel", "I Want You Now", "To Have and to Hold", "Nothing", "Pimpf", "Pleasure, Little Treasure"]
+    },
+    {
+      "title": "Violator",
+      "release_year": 1990,
+      "songs": ["World in My Eyes", "Sweetest Perfection", "Personal Jesus", "Halo", "Waiting for the Night", "Enjoy the Silence", "Policy of Truth", "Blue Dress", "Clean"]
+    },
+    {
+      "title": "Songs of Faith and Devotion",
+      "release_year": 1993,
+      "aliases": ["SOFAD"],
+      "songs": ["I Feel You", "Walking in My Shoes", "Condemnation", "Mercy in You", "Judas", "In Your Room", "Get Right with Me", "Rush", "One Caress", "Higher Love"]
+    },
+    {
+      "title": "Ultra",
+      "release_year": 1997,
+      "songs": ["Barrel of a Gun", "The Love Thieves", "Home", "It's No Good", "Uselink", "Useless", "Sister of Night", "Jazz Thieves", "Freestate", "The Bottom Line", "Insight"]
+    },
+    {
+      "title": "Exciter",
+      "release_year": 2001,
+      "songs": ["Dream On", "Shine", "The Sweetest Condition", "When the Body Speaks", "The Dead of Night", "Lovetheme", "Freelove", "Comatose", "I Am You", "Goodnight Lovers"]
+    },
+    {
+      "title": "Playing the Angel",
+      "release_year": 2005,
+      "songs": ["A Pain That I'm Used To", "John the Revelator", "Suffer Well", "The Sinner in Me", "Precious", "Macro", "I Want It All", "Nothing's Impossible", "Introspectre", "Damaged People", "Lillian", "The Darkest Star"]
+    },
+    {
+      "title": "Sounds of the Universe",
+      "release_year": 2009,
+      "songs": ["In Chains", "Hole to Feed", "Wrong", "Fragile Tension", "Little Soul", "In Sympathy", "Peace", "Come Back", "Spacewalker", "Perfect", "Miles Away / The Truth Is", "Jezebel", "Corrupt"]
+    },
+    {
+      "title": "Delta Machine",
+      "release_year": 2013,
+      "songs": ["Welcome to My World", "Angel", "Heaven", "Secret to the End", "My Little Universe", "Slow", "Broken", "The Child Inside", "Soft Touch / Raw Nerve", "Should Be Higher", "Alone", "Soothe My Soul", "Goodbye"]
+    },
+    {
+      "title": "Spirit",
+      "release_year": 2017,
+      "songs": ["Going Backwards", "Where's the Revolution", "The Worst Crime", "Scum", "You Move", "Cover Me", "Eternal", "Poison Heart", "So Much Love", "Poorman", "No More (This Is the Last Time)", "Fail"]
+    },
+    {
+      "title": "Memento Mori",
+      "release_year": 2023,
+      "songs": ["My Cosmos Is Mine", "Wagging Tongue", "Ghosts Again", "Don't Say You Love Me", "My Favourite Stranger", "Soul with Me", "Caroline's Monkey", "Before We Drown", "People Are Good", "Always You", "Never Let Me Go", "Speak to Me"]
+    }
+  ]
+}
