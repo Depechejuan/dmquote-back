@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from django.conf import settings
 
 from apps.catalog.models import Album, Song
 from apps.catalog.normalization import normalize_catalog_value
-from apps.interviews.models import Interview
+from apps.interviews.models import Interview, SourceSnapshot
 from apps.transcripts.models import TranscriptParagraph
 
 from .models import InterviewEntityLink
@@ -69,28 +70,49 @@ def scan_mentions(
 ) -> ScanSummary:
     summary = ScanSummary()
     targets = build_targets()
-    interviews = (
-        Interview.objects.filter(pk=interview.pk)
-        if interview is not None
-        else Interview.objects.filter(source_present=True)
-    )
-    for current_interview in interviews.iterator():
+    candidates_to_persist = []
+    if interview is not None:
+        interviews = [interview]
+        paragraphs_by_interview = {interview.pk: scannable_paragraphs(interview)}
+        snapshots_by_interview = {
+            interview.pk: interview.source_snapshots.order_by("-retrieved_at").first()
+        }
+    else:
+        interviews = list(Interview.objects.filter(source_present=True))
+        interview_ids = [current.pk for current in interviews]
+        paragraphs_by_interview = defaultdict(list)
+        for paragraph in (
+            TranscriptParagraph.objects.filter(
+                transcript__interview_id__in=interview_ids,
+                section__section_type__in=SCANNABLE_SECTION_TYPES,
+            )
+            .select_related("section", "transcript")
+            .order_by("transcript__interview_id", "section__order", "order")
+        ):
+            paragraphs_by_interview[paragraph.transcript.interview_id].append(paragraph)
+        snapshots_by_interview = {}
+        for snapshot in SourceSnapshot.objects.filter(
+            interview_id__in=interview_ids
+        ).order_by("interview_id", "-retrieved_at"):
+            snapshots_by_interview.setdefault(snapshot.interview_id, snapshot)
+
+    for current_interview in interviews:
         summary.interviews_scanned += 1
-        paragraphs = scannable_paragraphs(current_interview)
+        paragraphs = paragraphs_by_interview.get(current_interview.pk, [])
         summary.paragraphs_scanned += len(paragraphs)
-        explicit_links = explicit_links_for_interview(current_interview)
+        explicit_links = explicit_links_for_interview(
+            current_interview, snapshot=snapshots_by_interview.get(current_interview.pk)
+        )
         candidates, skipped = find_candidates(paragraphs, targets, explicit_links)
         summary.ambiguous_matches_skipped += skipped
         summary.candidates_found += len(candidates)
         if not dry_run:
-            for candidate in candidates:
-                result = persist_candidate(candidate)
-                if result == "created":
-                    summary.suggestions_created += 1
-                elif result == "updated":
-                    summary.suggestions_updated += 1
-                else:
-                    summary.suggestions_existing += 1
+            candidates_to_persist.extend(candidates)
+    if not dry_run:
+        created, updated, existing = persist_candidates(candidates_to_persist)
+        summary.suggestions_created = created
+        summary.suggestions_updated = updated
+        summary.suggestions_existing = existing
     return summary
 
 
@@ -116,8 +138,11 @@ def scannable_paragraphs(interview: Interview) -> list[TranscriptParagraph]:
     )
 
 
-def explicit_links_for_interview(interview: Interview) -> list[tuple[str, str]]:
-    snapshot = interview.source_snapshots.order_by("-retrieved_at").first()
+def explicit_links_for_interview(
+    interview: Interview, *, snapshot: SourceSnapshot | None = None
+) -> list[tuple[str, str]]:
+    if snapshot is None:
+        snapshot = interview.source_snapshots.order_by("-retrieved_at").first()
     if not snapshot or not snapshot.snapshot_path:
         return []
     path = Path(snapshot.snapshot_path)
@@ -199,6 +224,86 @@ def persist_candidate(candidate: MentionCandidate) -> str:
     existing.paragraph_content_hash = hash_text(candidate.paragraph.text)
     existing.save(update_fields=["method", "confidence", "evidence", "paragraph_content_hash", "updated_at"])
     return "updated"
+
+
+def persist_candidates(candidates: list[MentionCandidate]) -> tuple[int, int, int]:
+    if not candidates:
+        return 0, 0, 0
+
+    interview_ids = {candidate.paragraph.transcript.interview_id for candidate in candidates}
+    existing_links = InterviewEntityLink.objects.filter(interview_id__in=interview_ids)
+    existing_by_key = {
+        link_key(link): link
+        for link in existing_links
+    }
+    new_links = []
+    updated_links = []
+    created = updated = existing = 0
+    for candidate in candidates:
+        key = candidate_key(candidate)
+        link = existing_by_key.get(key)
+        if link is None:
+            link = InterviewEntityLink(
+                interview=candidate.paragraph.transcript.interview,
+                paragraph=candidate.paragraph,
+                section=candidate.paragraph.section,
+                scope=InterviewEntityLink.Scope.PARAGRAPH,
+                method=InterviewEntityLink.Method.RULES,
+                confidence=candidate.confidence,
+                review_status=InterviewEntityLink.ReviewStatus.SUGGESTED,
+                start_offset=candidate.start,
+                end_offset=candidate.end,
+                evidence=build_evidence(candidate.paragraph.text, candidate.start, candidate.end),
+                paragraph_content_hash=hash_text(candidate.paragraph.text),
+            )
+            if candidate.target.kind == "song":
+                link.song = candidate.target.entity
+            else:
+                link.album = candidate.target.entity
+            new_links.append(link)
+            existing_by_key[key] = link
+            created += 1
+        elif link.review_status != InterviewEntityLink.ReviewStatus.SUGGESTED:
+            existing += 1
+        else:
+            link.method = candidate.method
+            link.confidence = candidate.confidence
+            link.evidence = build_evidence(candidate.paragraph.text, candidate.start, candidate.end)
+            link.paragraph_content_hash = hash_text(candidate.paragraph.text)
+            updated_links.append(link)
+            updated += 1
+    InterviewEntityLink.objects.bulk_create(new_links)
+    InterviewEntityLink.objects.bulk_update(
+        updated_links,
+        ["method", "confidence", "evidence", "paragraph_content_hash", "updated_at"],
+    )
+    return created, updated, existing
+
+
+def candidate_key(candidate: MentionCandidate) -> tuple:
+    return (
+        candidate.paragraph.transcript.interview_id,
+        candidate.target.kind,
+        candidate.target.entity.pk,
+        candidate.paragraph.pk,
+        candidate.paragraph.section_id,
+        InterviewEntityLink.Scope.PARAGRAPH,
+        candidate.start,
+        candidate.end,
+    )
+
+
+def link_key(link: InterviewEntityLink) -> tuple:
+    return (
+        link.interview_id,
+        "song" if link.song_id else "album",
+        link.song_id or link.album_id,
+        link.paragraph_id,
+        link.section_id,
+        link.scope,
+        link.start_offset,
+        link.end_offset,
+    )
 
 
 def build_evidence(text: str, start: int, end: int, max_chars: int = EVIDENCE_MAX_CHARS) -> str:

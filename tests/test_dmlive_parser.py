@@ -149,6 +149,32 @@ def test_import_is_idempotent_and_keeps_private_snapshots(tmp_path):
 
 
 @pytest.mark.django_db
+def test_bulk_import_is_idempotent(tmp_path):
+    path = tmp_path / "export.xml"
+    write_xml(
+        path,
+        [
+            page_xml(10, 20, "1982-03-22 Radio One, London, UK", interview_text()),
+            page_xml(11, 21, "1983-04-01 Unknown, Madrid, Spain", interview_text()),
+        ],
+    )
+    importer = DMLiveImporter(snapshot_dir=tmp_path / "snapshots")
+
+    first = importer.import_file(path, bulk=True)
+    second = importer.import_file(path, bulk=True)
+
+    assert first.pages_created == 2
+    assert first.sections_created == 6
+    assert first.paragraphs_created == 10
+    assert second.pages_unchanged == 2
+    assert second.sections_created == 0
+    assert second.paragraphs_created == 0
+    assert Interview.objects.count() == 2
+    assert TranscriptParagraph.objects.count() == 10
+    assert SourceSnapshot.objects.count() == 4
+
+
+@pytest.mark.django_db
 def test_changed_source_with_verified_mention_is_preserved_for_review(tmp_path):
     first_path = tmp_path / "first.xml"
     second_path = tmp_path / "second.xml"

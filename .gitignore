@@ -9,5 +9,6 @@ staticfiles/
 media/
 source_snapshots/
 snapshots/
+reports/
 *.log
 *.egg-info/

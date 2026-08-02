@@ -20,6 +20,11 @@ class Command(BaseCommand):
         )
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument(
+            "--bulk",
+            action="store_true",
+            help="Use batched database writes for a large local export.",
+        )
+        parser.add_argument(
             "--mark-missing",
             action="store_true",
             help="Treat the input as a complete export and mark absent source pages as missing.",
@@ -37,6 +42,7 @@ class Command(BaseCommand):
                 input_name,
                 input_format=options["format"],
                 dry_run=options["dry_run"],
+                bulk=options["bulk"],
                 mark_missing=options["mark_missing"],
             )
         except (DMLiveImportError, ParseError, ValueError, OSError) as exc:
