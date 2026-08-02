@@ -2,8 +2,15 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.catalog.serializers import PersonSerializer
+from apps.transcripts.serializers import TranscriptSerializer
 
 from .models import Interview, InterviewParticipant
+
+
+class SourceAttributionSerializer(serializers.Serializer):
+    name = serializers.CharField(source="source_name")
+    domain = serializers.CharField(source="source_domain")
+    url = serializers.URLField(source="source_url")
 
 
 class InterviewParticipantSerializer(serializers.ModelSerializer):
@@ -17,6 +24,7 @@ class InterviewParticipantSerializer(serializers.ModelSerializer):
 class InterviewListSerializer(serializers.ModelSerializer):
     participants = serializers.SerializerMethodField()
     date = serializers.ReadOnlyField(source="date_display")
+    source = SourceAttributionSerializer(source="*", read_only=True)
 
     class Meta:
         model = Interview
@@ -28,11 +36,14 @@ class InterviewListSerializer(serializers.ModelSerializer):
             "date_year",
             "date_precision",
             "outlet",
+            "medium",
             "location",
             "audio_url",
             "source_url",
+            "source",
             "transcript_status",
             "publication_status",
+            "classification_status",
             "participants",
         ]
 
@@ -44,10 +55,29 @@ class InterviewListSerializer(serializers.ModelSerializer):
 
 
 class InterviewDetailSerializer(InterviewListSerializer):
+    transcript = serializers.SerializerMethodField()
+    notes = serializers.SerializerMethodField()
+
     class Meta(InterviewListSerializer.Meta):
         fields = InterviewListSerializer.Meta.fields + [
             "date_month",
             "date_day",
             "notes",
             "source_updated_at",
+            "transcript",
         ]
+
+    @extend_schema_field(TranscriptSerializer(allow_null=True))
+    def get_transcript(self, obj):
+        if obj.publication_status != Interview.PublicationStatus.AUTHORIZED_TEXT:
+            return None
+        transcript = getattr(obj, "transcript", None)
+        if transcript is None or transcript.publication_status != Interview.PublicationStatus.AUTHORIZED_TEXT:
+            return None
+        return TranscriptSerializer(transcript, context=self.context).data
+
+    @extend_schema_field(serializers.CharField())
+    def get_notes(self, obj):
+        if obj.publication_status != Interview.PublicationStatus.AUTHORIZED_TEXT:
+            return ""
+        return obj.notes

@@ -146,6 +146,14 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "A searchable index of Depeche Mode interviews and thematic mentions.",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "TranscriptStatusEnum": (
+            ("missing", "Missing"),
+            ("partial", "Partial"),
+            ("complete", "Complete"),
+            ("needs_review", "Needs review"),
+        ),
+    },
 }
 
 DMLIVE_IMPORT_ENABLED = env_bool("DMLIVE_IMPORT_ENABLED", False)

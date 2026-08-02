@@ -22,7 +22,7 @@ class AlbumSummarySerializer(serializers.ModelSerializer):
 
 
 class SongSerializer(serializers.ModelSerializer):
-    album = AlbumSummarySerializer(read_only=True)
+    album = AlbumSummarySerializer(read_only=True, allow_null=True)
 
     class Meta:
         model = Song
@@ -30,7 +30,7 @@ class SongSerializer(serializers.ModelSerializer):
 
 
 class SongSummarySerializer(serializers.ModelSerializer):
-    album = AlbumSummarySerializer(read_only=True)
+    album = AlbumSummarySerializer(read_only=True, allow_null=True)
 
     class Meta:
         model = Song
