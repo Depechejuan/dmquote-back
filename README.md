@@ -52,3 +52,31 @@ python manage.py authorize_dmlive \
   --source-domain dmlive.wiki \
   --confirm
 ```
+
+## Local deployment
+
+The Compose backend forces `DATABASE_URL` to the local `db` service, even if the
+ignored `.env` file contains a production Neon URL. It also runs migrations and
+the configured local superuser command at startup:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+To load a local XML export, place it under the ignored `local-imports/` directory
+and run:
+
+```bash
+docker compose exec backend python manage.py seed_catalog \
+  --input apps/catalog/data/depeche_mode_catalog_v1.json
+docker compose exec backend python manage.py ingest_dmlive \
+  --input local-imports/DM+Live-export.xml \
+  --format auto --bulk --mark-missing
+docker compose exec backend python manage.py scan_mentions
+docker compose exec backend python manage.py authorize_dmlive \
+  --source-domain dmlive.wiki --confirm
+```
+
+The backend is available at `http://localhost:8000`, Admin at
+`http://localhost:8000/admin/`, and the frontend at `http://localhost:5173`.

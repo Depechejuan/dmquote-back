@@ -10,5 +10,6 @@ media/
 source_snapshots/
 snapshots/
 reports/
+local-imports/
 *.log
 *.egg-info/
