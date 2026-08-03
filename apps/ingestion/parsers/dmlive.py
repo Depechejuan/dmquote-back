@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
-from urllib.parse import quote
 from xml.etree import ElementTree
+
+from apps.interviews.source_urls import build_dmlive_url
 
 _HEADING_RE = re.compile(r"^(={2,6})\s*(.*?)\s*\1\s*$")
 _SPEAKER_RE = re.compile(r"^([^:\n]{1,160}):\s+(.*)$")
@@ -63,8 +64,7 @@ class ParsedPage:
 
     @property
     def source_url(self) -> str:
-        encoded_title = quote(self.title.replace(" ", "_"), safe="()!,:'-_")
-        return f"https://dmlive.wiki/wiki/{encoded_title}"
+        return build_dmlive_url(self.title)
 
 
 def parse_source_file(path: str | Path, input_format: str = "auto") -> Iterator[ParsedPage]:

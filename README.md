@@ -14,6 +14,11 @@ The API is available at `http://localhost:8000`, Django Admin at
 `http://localhost:8000/dmlog/`, and OpenAPI documentation at
 `http://localhost:8000/api/docs/`.
 
+To inspect the same interview catalogue configured for the deployment locally,
+run Django without setting `DATABASE_ENGINE=sqlite`; the ignored `.env` must
+contain the intended PostgreSQL `DATABASE_URL`. The SQLite override is reserved
+for isolated tests and contains only local test data.
+
 The DM Live importer accepts local exports only and contains no live network operation.
 
 ## Local DM Live imports
@@ -32,6 +37,14 @@ Run without `--dry-run` to persist the import. Use `--mark-missing` only when th
 input is a complete source export; it marks absent pages as missing without deleting
 their records. Raw page snapshots are written to the ignored `snapshots/` directory.
 For a large export, add `--bulk` to use batched database writes.
+
+Canonical DM Live Wiki URLs can be audited and repaired without changing data
+first, then applied explicitly:
+
+```bash
+python manage.py repair_dmlive_urls --dry-run
+python manage.py repair_dmlive_urls
+```
 
 JSON input accepts either a top-level list of pages or an object with a `pages` list.
 Each page may contain `page_id`, `namespace`, `title`, and either top-level revision
