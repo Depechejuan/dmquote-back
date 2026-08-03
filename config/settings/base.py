@@ -130,8 +130,11 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOWED_ORIGINS = env_list(
-    "DJANGO_CORS_ALLOWED_ORIGINS", ["http://localhost:5173"]
+CORS_ALLOWED_ORIGINS = sorted(
+    {
+        *env_list("DJANGO_CORS_ALLOWED_ORIGINS", ["http://localhost:5173"]),
+        "https://dmquote.netlify.app",
+    }
 )
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 

@@ -1,6 +1,7 @@
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from drf_spectacular.utils import OpenApiResponse, extend_schema
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
@@ -8,7 +9,28 @@ from apps.mentions.public import public_mentions
 from apps.mentions.serializers import InterviewEntityLinkSerializer
 
 from .models import Album, Song
-from .serializers import AlbumSerializer, SongSerializer
+from .serializers import (
+    AlbumSerializer,
+    MusicCatalogSerializer,
+    SongSerializer,
+)
+
+
+@extend_schema(responses=MusicCatalogSerializer)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def music_catalog(request):
+    """Return the public music catalogue grouped into albums and standalone songs."""
+
+    albums = Album.objects.prefetch_related(
+        Prefetch("songs", queryset=Song.objects.order_by("title", "id"))
+    ).order_by("release_year", "title", "id")
+    standalone_songs = Song.objects.filter(album__isnull=True).order_by("title", "id")
+    payload = {
+        "albums": albums,
+        "standalone_songs": standalone_songs,
+    }
+    return Response(MusicCatalogSerializer(payload).data)
 
 
 class SongViewSet(ReadOnlyModelViewSet):

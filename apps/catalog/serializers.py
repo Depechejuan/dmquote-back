@@ -35,3 +35,22 @@ class SongSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Song
         fields = ["id", "title", "slug", "album", "release_year"]
+
+
+class MusicSongSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Song
+        fields = ["id", "title", "slug"]
+
+
+class MusicAlbumSerializer(serializers.ModelSerializer):
+    songs = MusicSongSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Album
+        fields = ["id", "title", "slug", "release_year", "songs"]
+
+
+class MusicCatalogSerializer(serializers.Serializer):
+    albums = MusicAlbumSerializer(many=True)
+    standalone_songs = MusicSongSerializer(many=True)
