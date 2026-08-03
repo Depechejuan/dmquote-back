@@ -176,6 +176,73 @@ def test_explicit_link_allows_ambiguous_song_title(tmp_path):
 
 
 @pytest.mark.django_db
+def test_scanner_normalizes_title_variants_and_preserves_source_offsets():
+    album = Album.objects.create(title="Construction Time Again", slug="construction-time-again")
+    song = Song.objects.create(
+        title="The Sun & the Rainfall",
+        slug="the-sun-and-the-rainfall",
+        album=album,
+    )
+    interview = Interview.objects.create(
+        title="1982-03-22 Radio One",
+        slug="1982-03-22-radio-one-normalized",
+        source_url="https://dmlive.wiki/wiki/1982-03-22_Radio_One",
+        source_page_id=203,
+    )
+    transcript = Transcript.objects.create(interview=interview)
+    section = TranscriptSection.objects.create(
+        transcript=transcript,
+        order=1,
+        heading="Transcript",
+        section_type=TranscriptSection.SectionType.TRANSCRIPT,
+    )
+    paragraph = TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=1,
+        text="We discussed The Sun and the Rainfall during the interview.",
+    )
+
+    summary = scan_mentions()
+
+    assert summary.suggestions_created == 1
+    link = InterviewEntityLink.objects.get(song=song)
+    assert paragraph.text[link.start_offset : link.end_offset] == "The Sun and the Rainfall"
+    assert float(link.confidence) == 0.92
+
+
+@pytest.mark.django_db
+def test_scanner_sends_song_album_title_collisions_to_review():
+    album = Album.objects.create(title="Black Celebration", slug="black-celebration")
+    Song.objects.create(title="Black Celebration", slug="black-celebration-song", album=album)
+    interview = Interview.objects.create(
+        title="1986-02-01 Radio Interview",
+        slug="1986-02-01-radio-interview",
+        source_url="https://dmlive.wiki/wiki/1986-02-01_Radio_Interview",
+        source_page_id=204,
+    )
+    transcript = Transcript.objects.create(interview=interview)
+    section = TranscriptSection.objects.create(
+        transcript=transcript,
+        order=1,
+        heading="Transcript",
+        section_type=TranscriptSection.SectionType.TRANSCRIPT,
+    )
+    TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=1,
+        text="Black Celebration was discussed.",
+    )
+
+    summary = scan_mentions()
+
+    assert summary.candidates_found == 0
+    assert summary.ambiguous_matches_skipped == 1
+    assert not InterviewEntityLink.objects.exists()
+
+
+@pytest.mark.django_db
 def test_repeated_scan_does_not_duplicate_and_preserves_verified_link(tmp_path):
     album = Album.objects.create(title="Violator", slug="violator")
     Song.objects.create(title="Enjoy the Silence", slug="enjoy-the-silence", album=album)

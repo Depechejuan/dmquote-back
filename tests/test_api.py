@@ -1,6 +1,7 @@
 import pytest
 from django.conf import settings
-from django.test import Client
+from django.contrib.auth import get_user_model
+from django.test import Client, override_settings
 from rest_framework.test import APIClient
 
 from apps.catalog.models import Album, Song
@@ -63,3 +64,37 @@ def test_production_frontend_origin_is_allowed_for_api_requests():
 
     assert response.status_code == 200
     assert response["Access-Control-Allow-Origin"] == "https://dmquote.netlify.app"
+
+
+@pytest.mark.django_db
+@override_settings(
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        },
+    }
+)
+def test_admin_login_accepts_a_fresh_csrf_token():
+    get_user_model().objects.create_superuser(
+        username="csrf-admin",
+        email="csrf-admin@example.test",
+        password="safe-test-password",
+    )
+    client = Client(enforce_csrf_checks=True)
+    login_page = client.get("/dmlog/login/", HTTP_HOST="localhost")
+    token = client.cookies["dmquote_csrftoken"].value
+
+    response = client.post(
+        "/dmlog/login/",
+        {
+            "username": "csrf-admin",
+            "password": "safe-test-password",
+            "csrfmiddlewaretoken": token,
+        },
+        HTTP_HOST="localhost",
+    )
+
+    assert login_page.status_code == 200
+    assert response.status_code == 302
+    assert response["Location"] == "/accounts/profile/"

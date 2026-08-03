@@ -5,6 +5,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 from django.conf import settings
 
@@ -167,32 +168,67 @@ def find_candidates(
 ) -> tuple[list[MentionCandidate], int]:
     candidates: dict[tuple[str, int, int, int, int], MentionCandidate] = {}
     skipped_ambiguous = 0
-    normalized_targets = {
-        normalize_catalog_value(target.alias): target for target in targets if target.alias
-    }
+    target_index = build_target_index(targets)
 
     for paragraph in paragraphs:
+        normalized_source = normalized_text_with_offsets(paragraph.text)
         for linked_target, linked_label in explicit_links:
-            normalized_target = normalize_catalog_value(linked_target)
-            target = normalized_targets.get(normalized_target)
+            target = unique_target(
+                target_index.get(normalize_catalog_value(linked_target), ())
+            )
             if target is None:
-                target = normalized_targets.get(normalize_catalog_value(linked_label))
+                target = unique_target(
+                    target_index.get(normalize_catalog_value(linked_label), ())
+                )
             if target is None:
                 continue
-            for start, end in find_occurrences(paragraph.text, linked_label):
+            for start, end in find_occurrences(
+                paragraph.text, linked_label, normalized_source=normalized_source
+            ):
                 candidate = MentionCandidate(target, paragraph, start, end, "rules", 1.0)
                 _keep_best(candidates, candidate)
 
-        for target in targets:
-            normalized_alias = normalize_catalog_value(target.alias)
-            if normalized_alias in AMBIGUOUS_ALIASES:
-                skipped_ambiguous += 1
+        for normalized_alias, matching_targets in target_index.items():
+            target = unique_target(matching_targets)
+            if target is None:
+                if find_occurrences(
+                    paragraph.text, normalized_alias, normalized_source=normalized_source
+                ):
+                    skipped_ambiguous += 1
                 continue
-            for start, end in find_occurrences(paragraph.text, target.alias):
+            if normalized_alias in AMBIGUOUS_ALIASES:
+                if find_occurrences(
+                    paragraph.text, normalized_alias, normalized_source=normalized_source
+                ):
+                    skipped_ambiguous += 1
+                continue
+            for start, end in find_occurrences(
+                paragraph.text, normalized_alias, normalized_source=normalized_source
+            ):
                 confidence = 0.92 if target.is_title else 0.85
                 candidate = MentionCandidate(target, paragraph, start, end, "rules", confidence)
                 _keep_best(candidates, candidate)
     return list(candidates.values()), skipped_ambiguous
+
+
+def build_target_index(targets: Iterable[Target]) -> dict[str, list[Target]]:
+    """Index normalized titles and aliases without hiding collisions."""
+
+    indexed: dict[str, dict[tuple[str, int], Target]] = defaultdict(dict)
+    for target in targets:
+        normalized_alias = normalize_catalog_value(target.alias)
+        if not normalized_alias:
+            continue
+        key = (target.kind, target.entity.pk)
+        previous = indexed[normalized_alias].get(key)
+        if previous is None or target.is_title:
+            indexed[normalized_alias][key] = target
+    return {alias: list(entity_targets.values()) for alias, entity_targets in indexed.items()}
+
+
+def unique_target(targets: Iterable[Target]) -> Target | None:
+    targets = list(targets)
+    return targets[0] if len(targets) == 1 else None
 
 
 def persist_candidate(candidate: MentionCandidate) -> str:
@@ -320,14 +356,58 @@ def build_evidence(text: str, start: int, end: int, max_chars: int = EVIDENCE_MA
     return evidence[:max_chars]
 
 
-def find_occurrences(text: str, alias: str) -> list[tuple[int, int]]:
+def find_occurrences(
+    text: str,
+    alias: str,
+    *,
+    normalized_source: tuple[str, list[int]] | None = None,
+) -> list[tuple[int, int]]:
     if not alias.strip():
         return []
-    pattern = re.escape(alias.strip()).replace(r"\ ", r"\s+")
+    pattern = re.escape(normalize_catalog_value(alias)).replace(r"\ ", r"\s+")
+    normalized_text, offsets = normalized_source or normalized_text_with_offsets(text)
+    if not pattern or not normalized_text:
+        return []
     return [
-        match.span()
-        for match in re.finditer(rf"(?<!\w){pattern}(?!\w)", text, flags=re.IGNORECASE)
+        (offsets[match.start()], offsets[match.end() - 1] + 1)
+        for match in re.finditer(rf"(?<!\w){pattern}(?!\w)", normalized_text)
     ]
+
+
+def normalized_text_with_offsets(text: str) -> tuple[str, list[int]]:
+    """Normalize text for matching while retaining source offsets for citations."""
+
+    normalized_chars: list[str] = []
+    offsets: list[int] = []
+    for index, character in enumerate(text):
+        normalized = normalize_catalog_value(character)
+        if character == "&":
+            normalized = "and"
+        elif not normalized:
+            normalized = " "
+        for normalized_character in normalized:
+            normalized_chars.append(normalized_character)
+            offsets.append(index)
+
+    collapsed_chars: list[str] = []
+    collapsed_offsets: list[int] = []
+    previous_was_space = False
+    for character, offset in zip(normalized_chars, offsets):
+        if character == " ":
+            if previous_was_space:
+                continue
+            previous_was_space = True
+        else:
+            previous_was_space = False
+        collapsed_chars.append(character)
+        collapsed_offsets.append(offset)
+    while collapsed_chars and collapsed_chars[0] == " ":
+        collapsed_chars.pop(0)
+        collapsed_offsets.pop(0)
+    while collapsed_chars and collapsed_chars[-1] == " ":
+        collapsed_chars.pop()
+        collapsed_offsets.pop()
+    return "".join(collapsed_chars), collapsed_offsets
 
 
 def _keep_best(
