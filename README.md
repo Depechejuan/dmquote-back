@@ -11,7 +11,7 @@ docker compose up --build
 ```
 
 The API is available at `http://localhost:8000`, Django Admin at
-`http://localhost:8000/admin/`, and OpenAPI documentation at
+`http://localhost:8000/dmlog/`, and OpenAPI documentation at
 `http://localhost:8000/api/docs/`.
 
 The DM Live importer accepts local exports only and contains no live network operation.
@@ -79,7 +79,7 @@ docker compose exec backend python manage.py authorize_dmlive \
 ```
 
 The backend is available at `http://localhost:8000`, Admin at
-`http://localhost:8000/admin/`, and the frontend at `http://localhost:5173`.
+`http://localhost:8000/dmlog/`, and the frontend at `http://localhost:5173`.
 
 ## Vercel deployment
 
@@ -99,6 +99,11 @@ DATABASE_ENGINE=postgresql
 DATABASE_URL=<Neon-production-connection-string>
 DATABASE_CONN_MAX_AGE=0
 ```
+
+The public backend root is `https://dmquote-back.vercel.app/` and returns
+`ok`. Its public API base is
+`https://dmquote-back.vercel.app/api/v1`; Admin/login is at
+`https://dmquote-back.vercel.app/dmlog/`.
 
 Run migrations against Neon from a trusted local environment or a controlled
 release job before testing the public deployment. Do not configure the import

@@ -84,7 +84,7 @@ def test_non_staff_user_cannot_open_editorial_admin(admin_client):
     response = client.get(reverse("admin:interviews_interview_changelist"))
 
     assert response.status_code == 302
-    assert "/admin/login/" in response["Location"]
+    assert "/dmlog/login/" in response["Location"]
 
 
 @pytest.mark.django_db

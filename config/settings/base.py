@@ -26,7 +26,12 @@ def env_list(name: str, default: list[str] | None = None) -> list[str]:
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-local-development-key")
 DEBUG = env_bool("DJANGO_DEBUG", False)
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = sorted(
+    {
+        *env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"]),
+        "dmquote-back.vercel.app",
+    }
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",

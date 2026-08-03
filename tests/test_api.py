@@ -1,5 +1,13 @@
 import pytest
+from django.test import Client
 from rest_framework.test import APIClient
+
+
+def test_root_returns_ok():
+    response = Client().get("/")
+
+    assert response.status_code == 200
+    assert response.content == b"ok"
 
 
 @pytest.mark.django_db
