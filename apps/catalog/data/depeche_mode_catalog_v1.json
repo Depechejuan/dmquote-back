@@ -1,17 +1,22 @@
 {
-  "version": "1.0.0",
-  "source": "DMQuote curated Depeche Mode studio catalogue",
+  "version": "2.0.0",
+  "source": "DMQuote canonical Depeche Mode song catalogue",
+  "sources": [
+    "https://archives.depechemode.com/discography/boxsets/23_mode.html",
+    "https://archives.depechemode.com/discography/singles/",
+    "https://www.depechemode.com/discography/"
+  ],
   "albums": [
     {
       "title": "Speak & Spell",
       "release_year": 1981,
       "aliases": ["Speak and Spell"],
-      "songs": ["New Life", "Puppets", "Dreaming of Me", "Nodisco", "What's Your Name?", "Photographic", "Tora! Tora! Tora!", "Big Muff", "Any Second Now (Voices)", "Just Can't Get Enough"]
+      "songs": ["New Life", "I Sometimes Wish I Was Dead", "Puppets", "Boys Say Go!", "Nodisco", {"title": "What's Your Name?", "aliases": ["What's Your Name"]}, {"title": "Photographic", "aliases": ["Photographic (Some Bizarre Version)"]}, "Tora! Tora! Tora!", "Big Muff", "Any Second Now (Voices)", "Just Can't Get Enough"]
     },
     {
       "title": "A Broken Frame",
       "release_year": 1982,
-      "songs": ["Leave in Silence", "My Secret Garden", "Monument", "Nothing to Fear", "See You", "Satellite", "The Meaning of Love", "A Photograph of You", "Shouldn't Have Done That", "The Sun & the Rainfall"]
+      "songs": ["Leave in Silence", "My Secret Garden", "Monument", "Nothing to Fear", "See You", "Satellite", "The Meaning of Love", "A Photograph of You", "Shouldn't Have Done That", {"title": "The Sun & the Rainfall", "aliases": ["The Sun And The Rainfall"]}]
     },
     {
       "title": "Construction Time Again",
@@ -26,12 +31,12 @@
     {
       "title": "Black Celebration",
       "release_year": 1986,
-      "songs": ["Black Celebration", "Fly on the Windscreen", "A Question of Lust", "Sometimes", "It Doesn't Matter Two", "A Question of Time", "Stripped", "Here Is the House", "World Full of Nothing", "Dressed in Black", "New Dress"]
+      "songs": ["Black Celebration", {"title": "Fly on the Windscreen", "aliases": ["Fly on the Windscreen - Final"]}, "A Question of Lust", "Sometimes", "It Doesn't Matter Two", "A Question of Time", "Stripped", "Here Is the House", "World Full of Nothing", {"title": "Dressed in Black", "aliases": ["Dressed in Black (Record Mirror Version)"]}, "New Dress"]
     },
     {
       "title": "Music for the Masses",
       "release_year": 1987,
-      "songs": ["Never Let Me Down Again", "The Things You Said", "Strangelove", "Sacrifice", "Little 15", "Behind the Wheel", "I Want You Now", "To Have and to Hold", "Nothing", "Pimpf", "Pleasure, Little Treasure"]
+      "songs": ["Never Let Me Down Again", "The Things You Said", "Strangelove", {"title": "Sacred", "legacy_titles": ["Sacrifice"]}, "Little 15", "Behind the Wheel", "I Want You Now", "To Have and to Hold", "Nothing", "Pimpf"]
     },
     {
       "title": "Violator",
@@ -47,17 +52,17 @@
     {
       "title": "Ultra",
       "release_year": 1997,
-      "songs": ["Barrel of a Gun", "The Love Thieves", "Home", "It's No Good", "Uselink", "Useless", "Sister of Night", "Jazz Thieves", "Freestate", "The Bottom Line", "Insight"]
+      "songs": ["Barrel of a Gun", "The Love Thieves", "Home", "It's No Good", "Uselink", "Useless", "Sister of Night", "Jazz Thieves", "Freestate", "The Bottom Line", "Insight", "Junior Painkiller"]
     },
     {
       "title": "Exciter",
       "release_year": 2001,
-      "songs": ["Dream On", "Shine", "The Sweetest Condition", "When the Body Speaks", "The Dead of Night", "Lovetheme", "Freelove", "Comatose", "I Am You", "Goodnight Lovers"]
+      "songs": ["Dream On", "Shine", "The Sweetest Condition", "When the Body Speaks", "The Dead of Night", "Lovetheme", "Freelove", "Comatose", "I Feel Loved", "Breathe", "Easy Tiger", "I Am You", "Goodnight Lovers"]
     },
     {
       "title": "Playing the Angel",
       "release_year": 2005,
-      "songs": ["A Pain That I'm Used To", "John the Revelator", "Suffer Well", "The Sinner in Me", "Precious", "Macro", "I Want It All", "Nothing's Impossible", "Introspectre", "Damaged People", "Lillian", "The Darkest Star"]
+      "songs": ["A Pain That I'm Used To", "John the Revelator", "Suffer Well", "The Sinner in Me", "Precious", "Macro", "I Want It All", "Nothing's Impossible", "Introspectre", "Damaged People", {"title": "Lilian", "legacy_titles": ["Lillian"]}, "The Darkest Star"]
     },
     {
       "title": "Sounds of the Universe",
@@ -79,5 +84,64 @@
       "release_year": 2023,
       "songs": ["My Cosmos Is Mine", "Wagging Tongue", "Ghosts Again", "Don't Say You Love Me", "My Favourite Stranger", "Soul with Me", "Caroline's Monkey", "Before We Drown", "People Are Good", "Always You", "Never Let Me Go", "Speak to Me"]
     }
+  ],
+  "standalone_songs": [
+    {"title": "Dreaming of Me", "release_year": 1981},
+    {"title": "Ice Machine", "release_year": 1981},
+    {"title": "Shout", "release_year": 1981},
+    {"title": "Now, This Is Fun", "release_year": 1982, "aliases": ["Now This Is Fun"]},
+    {"title": "Oberkorn (It's a Small Town)", "release_year": 1982},
+    {"title": "Get the Balance Right!", "release_year": 1983, "aliases": ["Get The Balance Right"]},
+    {"title": "The Great Outdoors!", "release_year": 1983},
+    {"title": "Work Hard", "release_year": 1983},
+    {"title": "Fools", "release_year": 1983},
+    {"title": "In Your Memory", "release_year": 1984},
+    {"title": "(Set Me Free) Remotivate Me", "release_year": 1984},
+    {"title": "Shake the Disease", "release_year": 1985},
+    {"title": "Flexible", "release_year": 1985},
+    {"title": "It's Called a Heart", "release_year": 1985},
+    {"title": "But Not Tonight", "release_year": 1986},
+    {"title": "Breathing in Fumes", "release_year": 1986},
+    {"title": "Black Day", "release_year": 1986},
+    {"title": "Christmas Island", "release_year": 1986},
+    {"title": "Agent Orange", "release_year": 1987},
+    {"title": "Fpmip", "release_year": 1987},
+    {"title": "Pleasure, Little Treasure", "release_year": 1987},
+    {"title": "Route 66", "release_year": 1987},
+    {"title": "Stjarna", "release_year": 1990},
+    {"title": "Sonata No. 14 in C-sharp Minor (Moonlight Sonata)", "release_year": 1990, "aliases": ["Sonata No. 14 In C#m (Moonlight Sonata)"]},
+    {"title": "Dangerous", "release_year": 1990},
+    {"title": "Memphisto", "release_year": 1990},
+    {"title": "Sibeling", "release_year": 1990},
+    {"title": "Kaleid", "release_year": 1990},
+    {"title": "Happiest Girl", "release_year": 1990, "aliases": ["Happiest Girl (Jack Mix)"]},
+    {"title": "Sea of Sin", "release_year": 1990, "aliases": ["Sea of Sin (Tonal Mix)"]},
+    {"title": "My Joy", "release_year": 1993, "aliases": ["My Joy (Seven Inch Mix)"]},
+    {"title": "Death's Door", "release_year": 1993, "aliases": ["Death's Door (Soundtrack Version)", "Death's Door (Jazz Mix)"]},
+    {"title": "Slowblow", "release_year": 1993},
+    {"title": "Painkiller", "release_year": 1997},
+    {"title": "Only When I Lose Myself", "release_year": 1998},
+    {"title": "Surrender", "release_year": 2001},
+    {"title": "Headstar", "release_year": 2001},
+    {"title": "Dirt", "release_year": 2001},
+    {"title": "Zenstation", "release_year": 2001},
+    {"title": "Free", "release_year": 2001},
+    {"title": "Newborn", "release_year": 2005},
+    {"title": "Better Days", "release_year": 2005},
+    {"title": "Martyr", "release_year": 2006},
+    {"title": "Oh Well", "release_year": 2009, "aliases": ["Oh Well (Single Version)"]},
+    {"title": "Light", "release_year": 2009},
+    {"title": "The Sun and the Moon and the Stars", "release_year": 2009},
+    {"title": "Ghost", "release_year": 2013},
+    {"title": "Esque", "release_year": 2013},
+    {"title": "Long Time Lie", "release_year": 2013},
+    {"title": "Happens All the Time", "release_year": 2013},
+    {"title": "Always", "release_year": 2013},
+    {"title": "All That's Mine", "release_year": 2013},
+    {"title": "Heroes", "release_year": 2017, "aliases": ["Heroes (Highline Session Version)"]},
+    {"title": "Survive", "release_year": 2025},
+    {"title": "Life 2.0", "release_year": 2025},
+    {"title": "Give Yourself to Me", "release_year": 2025},
+    {"title": "In the End", "release_year": 2025}
   ]
 }

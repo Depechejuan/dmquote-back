@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -22,15 +23,64 @@ CATALOG_PATH = (
 def test_versioned_catalog_seed_is_idempotent():
     first = seed_catalog(CATALOG_PATH)
     second = seed_catalog(CATALOG_PATH)
+    catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    expected_song_count = sum(len(album["songs"]) for album in catalog["albums"])
+    expected_song_count += len(catalog["standalone_songs"])
 
-    assert first.version == "1.0.0"
-    assert first.albums_created == 15
-    assert first.songs_created > 100
+    assert first.version == "2.0.0"
+    assert first.albums_created == len(catalog["albums"])
+    assert first.songs_created == expected_song_count
     assert second.albums_created == 0
     assert second.songs_created == 0
-    assert second.albums_updated == 15
+    assert second.albums_updated == len(catalog["albums"])
     assert Album.objects.get(title="Speak & Spell").aliases.get(value="Speak and Spell")
     assert Song.objects.get(title="New Life").album.title == "Speak & Spell"
+    assert Song.objects.get(title="I Sometimes Wish I Was Dead").album.title == "Speak & Spell"
+    assert Song.objects.get(title="Dreaming of Me").album is None
+    assert Song.objects.get(title="Pleasure, Little Treasure").album is None
+    assert Song.objects.get(title="Sacred").album.title == "Music for the Masses"
+    assert Song.objects.get(title="Easy Tiger").album.title == "Exciter"
+
+
+@pytest.mark.django_db
+def test_catalog_migrates_legacy_titles_and_reports_unmatched_records():
+    album = Album.objects.create(title="Music for the Masses", slug="music-for-the-masses")
+    Song.objects.create(
+        title="Sacrifice",
+        slug="sacrifice",
+        album=album,
+        release_year=1987,
+    )
+    Song.objects.create(title="A", slug="a", album=album, release_year=1987)
+
+    summary = seed_catalog(CATALOG_PATH)
+
+    assert Song.objects.filter(title="Sacrifice").exists() is False
+    assert Song.objects.get(title="Sacred").album == album
+    assert "A" in summary.unmatched_existing_songs
+
+
+def test_catalog_rejects_duplicate_normalized_titles(tmp_path):
+    path = tmp_path / "duplicate-catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": "test",
+                "albums": [
+                    {
+                        "title": "Test Album",
+                        "release_year": 2026,
+                        "songs": ["Same Title"],
+                    }
+                ],
+                "standalone_songs": [{"title": "same-title", "release_year": 2026}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Duplicate normalized song title"):
+        seed_catalog(path, dry_run=True)
 
 
 @pytest.mark.django_db

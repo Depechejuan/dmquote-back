@@ -14,11 +14,28 @@ from .normalization import normalize_catalog_value
 @dataclass
 class CatalogSeedSummary:
     version: str
+    catalog_albums: int = 0
+    catalog_songs: int = 0
     albums_created: int = 0
     albums_updated: int = 0
     songs_created: int = 0
     songs_updated: int = 0
     aliases_created: int = 0
+    unmatched_existing_albums: list[str] | None = None
+    unmatched_existing_songs: list[str] | None = None
+
+    def __post_init__(self):
+        self.unmatched_existing_albums = self.unmatched_existing_albums or []
+        self.unmatched_existing_songs = self.unmatched_existing_songs or []
+
+
+@dataclass(frozen=True)
+class CatalogSong:
+    title: str
+    album: Album | None
+    release_year: int | None
+    aliases: list[str]
+    legacy_titles: list[str]
 
 
 def seed_catalog(path: str | Path, *, dry_run: bool = False) -> CatalogSeedSummary:
@@ -29,28 +46,47 @@ def seed_catalog(path: str | Path, *, dry_run: bool = False) -> CatalogSeedSumma
     albums_data = payload.get("albums")
     if not isinstance(albums_data, list):
         raise ValueError("Catalog JSON must contain an 'albums' list")
+    standalone_data = payload.get("standalone_songs", [])
+    if not isinstance(standalone_data, list):
+        raise ValueError("Catalog JSON 'standalone_songs' must be a list")
 
-    summary = CatalogSeedSummary(version=version)
+    catalog_songs_data = collect_songs(
+        albums_data,
+        {} if dry_run else None,
+        standalone_data,
+    )
+    validate_catalog(albums_data, catalog_songs_data)
+    summary = CatalogSeedSummary(
+        version=version,
+        catalog_albums=len(albums_data),
+        catalog_songs=len(catalog_songs_data),
+    )
     if dry_run:
         summary.albums_created = len(albums_data)
-        summary.songs_created = sum(len(album.get("songs", [])) for album in albums_data)
+        summary.songs_created = len(catalog_songs_data)
         summary.aliases_created = sum(
             len(album.get("aliases", []))
             + sum(
-                len(song.get("aliases", []))
+                len(song.get("aliases", [])) if isinstance(song, dict) else 0
                 for song in album.get("songs", [])
-                if isinstance(song, dict)
             )
             for album in albums_data
         )
+        summary.aliases_created += sum(
+            len(song.aliases) for song in catalog_songs_data if song.album is None
+        )
+        summary.unmatched_existing_albums = unmatched_existing_albums(albums_data)
+        summary.unmatched_existing_songs = unmatched_existing_songs(catalog_songs_data)
         return summary
 
     with transaction.atomic():
         albums = upsert_albums(albums_data, summary)
         summary.aliases_created += upsert_album_aliases(albums_data, albums)
-        songs_data = collect_songs(albums_data, albums)
+        songs_data = collect_songs(albums_data, albums, standalone_data)
         songs = upsert_songs(songs_data, summary)
         summary.aliases_created += upsert_song_aliases(songs_data, songs)
+        summary.unmatched_existing_albums = unmatched_existing_albums(albums_data)
+        summary.unmatched_existing_songs = unmatched_existing_songs(songs_data)
     return summary
 
 
@@ -107,56 +143,115 @@ def upsert_album_aliases(albums_data: list[dict], albums: dict[str, Album]) -> i
     return len(new_aliases)
 
 
-def collect_songs(albums_data: list[dict], albums: dict[str, Album]) -> list[tuple[str, Album, list[str]]]:
-    songs = []
-    seen_titles = set()
+def collect_songs(
+    albums_data: list[dict],
+    albums: dict[str, Album] | None,
+    standalone_data: list[dict] | None = None,
+) -> list[CatalogSong]:
+    songs: list[CatalogSong] = []
     for album_data in albums_data:
         for song_data in album_data.get("songs", []):
-            title = song_data if isinstance(song_data, str) else song_data["title"]
-            if title in seen_titles:
-                raise ValueError(f"Duplicate song title in catalog: {title}")
-            seen_titles.add(title)
-            aliases = [] if isinstance(song_data, str) else song_data.get("aliases", [])
-            songs.append((title, albums[album_data["title"]], aliases))
+            songs.append(
+                catalog_song(
+                    song_data,
+                    albums.get(album_data["title"]) if albums is not None else None,
+                    album_data.get("release_year"),
+                )
+            )
+    for song_data in standalone_data or []:
+        default_year = song_data.get("release_year") if isinstance(song_data, dict) else None
+        songs.append(catalog_song(song_data, None, default_year))
     return songs
 
 
-def upsert_songs(songs_data: list[tuple[str, Album, list[str]]], summary: CatalogSeedSummary) -> dict[str, Song]:
-    titles = [title for title, _, _ in songs_data]
-    existing = {song.title: song for song in Song.objects.filter(title__in=titles)}
+def catalog_song(song_data, album: Album | None, default_release_year: int | None) -> CatalogSong:
+    if isinstance(song_data, str):
+        return CatalogSong(song_data, album, default_release_year, [], [])
+    if not isinstance(song_data, dict) or not song_data.get("title"):
+        raise ValueError("Each catalog song must be a title or an object with a title")
+    return CatalogSong(
+        title=song_data["title"],
+        album=album,
+        release_year=song_data.get("release_year", default_release_year),
+        aliases=list(song_data.get("aliases", [])),
+        legacy_titles=list(song_data.get("legacy_titles", [])),
+    )
+
+
+def validate_catalog(albums_data: list[dict], songs_data: list[CatalogSong]) -> None:
+    seen: dict[str, str] = {}
+    for song in songs_data:
+        for label in [song.title, *song.aliases, *song.legacy_titles]:
+            normalized = normalize_catalog_value(label)
+            if not normalized:
+                raise ValueError(f"Catalog title cannot be empty: {label!r}")
+            previous = seen.get(normalized)
+            if previous and previous != song.title:
+                raise ValueError(
+                    f"Duplicate normalized song title in catalog: {label!r} "
+                    f"belongs to both {previous!r} and {song.title!r}"
+                )
+            seen[normalized] = song.title
+
+
+def upsert_songs(songs_data: list[CatalogSong], summary: CatalogSeedSummary) -> dict[str, Song]:
+    existing_songs = list(Song.objects.all())
+    existing_by_title = {song.title: song for song in existing_songs}
+    existing_by_normalized = {
+        normalize_catalog_value(song.title): song for song in existing_songs
+    }
     used_slugs = set(Song.objects.values_list("slug", flat=True))
     new_songs = []
-    for title, album, _ in songs_data:
-        if title in existing:
+    all_songs: dict[str, Song] = {}
+    for catalog_song_data in songs_data:
+        title = catalog_song_data.title
+        existing = existing_by_title.get(title)
+        if existing is None:
+            existing = existing_by_normalized.get(normalize_catalog_value(title))
+        if existing is None:
+            existing = next(
+                (
+                    candidate
+                    for legacy_title in catalog_song_data.legacy_titles
+                    for candidate in [existing_by_title.get(legacy_title)]
+                    if candidate is not None
+                ),
+                None,
+            )
+        if existing is not None:
             summary.songs_updated += 1
-            existing[title].album = album
-            existing[title].release_year = album.release_year
+            if existing.title != title:
+                used_slugs.discard(existing.slug)
+                existing.title = title
+                existing.slug = unique_slug(used_slugs, title)
+                used_slugs.add(existing.slug)
+            existing.album = catalog_song_data.album
+            existing.release_year = catalog_song_data.release_year
+            all_songs[title] = existing
             continue
         song = Song(
             title=title,
             slug=unique_slug(used_slugs, title),
-            album=album,
-            release_year=album.release_year,
+            album=catalog_song_data.album,
+            release_year=catalog_song_data.release_year,
         )
         used_slugs.add(song.slug)
         new_songs.append(song)
-        existing[title] = song
+        all_songs[title] = song
         summary.songs_created += 1
     if new_songs:
         Song.objects.bulk_create(new_songs)
-    all_songs = {song.title: song for song in Song.objects.filter(title__in=titles)}
-    for title, album, _ in songs_data:
-        all_songs[title].album = album
-        all_songs[title].release_year = album.release_year
-    Song.objects.bulk_update(all_songs.values(), ["album", "release_year"])
+    Song.objects.bulk_update(
+        all_songs.values(), ["title", "slug", "album", "release_year"]
+    )
     return all_songs
 
 
-def upsert_song_aliases(songs_data: list[tuple[str, Album, list[str]]], songs: dict[str, Song]) -> int:
+def upsert_song_aliases(songs_data: list[CatalogSong], songs: dict[str, Song]) -> int:
     requested = [
-        (songs[title].pk, alias)
-        for title, _, aliases in songs_data
-        for alias in aliases
+        (songs[song.title].pk, alias)
+        for song in songs_data
+        for alias in song.aliases
     ]
     existing = set(
         SongAlias.objects.filter(song_id__in=[song.pk for song in songs.values()]).values_list(
@@ -171,6 +266,28 @@ def upsert_song_aliases(songs_data: list[tuple[str, Album, list[str]]], songs: d
     if new_aliases:
         SongAlias.objects.bulk_create(new_aliases, ignore_conflicts=True)
     return len(new_aliases)
+
+
+def unmatched_existing_albums(albums_data: list[dict]) -> list[str]:
+    catalog_titles = {normalize_catalog_value(album["title"]) for album in albums_data}
+    return sorted(
+        album.title
+        for album in Album.objects.all()
+        if normalize_catalog_value(album.title) not in catalog_titles
+    )
+
+
+def unmatched_existing_songs(songs_data: list[CatalogSong]) -> list[str]:
+    catalog_titles = {
+        normalize_catalog_value(label)
+        for song in songs_data
+        for label in [song.title, *song.legacy_titles]
+    }
+    return sorted(
+        song.title
+        for song in Song.objects.all()
+        if normalize_catalog_value(song.title) not in catalog_titles
+    )
 
 
 def unique_slug(used_slugs: set[str], title: str) -> str:

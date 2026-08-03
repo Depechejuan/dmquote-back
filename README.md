@@ -78,6 +78,12 @@ docker compose exec backend python manage.py authorize_dmlive \
   --source-domain dmlive.wiki --confirm
 ```
 
+The versioned catalogue contains one canonical record per song. Songs belonging
+to an album are listed inside that album, while official songs without a
+primary album are listed in `standalone_songs`. Re-running `seed_catalog` is
+safe and reports existing database records that are not present in the
+catalogue for manual review; it does not delete them automatically.
+
 The backend is available at `http://localhost:8000`, Admin at
 `http://localhost:8000/dmlog/`, and the frontend at `http://localhost:5173`.
 
