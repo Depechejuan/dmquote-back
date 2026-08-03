@@ -80,3 +80,26 @@ docker compose exec backend python manage.py authorize_dmlive \
 
 The backend is available at `http://localhost:8000`, Admin at
 `http://localhost:8000/admin/`, and the frontend at `http://localhost:5173`.
+
+## Vercel deployment
+
+The backend is prepared as a Vercel Python Function through `api/index.py` and
+`vercel.json`. Create or link the Vercel project with the name `dmquote-back`,
+using the repository root as its project root. The project must define these
+runtime variables in Vercel; values are not stored in Git:
+
+```text
+DJANGO_SETTINGS_MODULE=config.settings.production
+DJANGO_SECRET_KEY=<long-random-production-secret>
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=dmquote-back.vercel.app,.vercel.app
+DJANGO_CORS_ALLOWED_ORIGINS=https://dmquote.netlify.app
+DJANGO_CSRF_TRUSTED_ORIGINS=https://dmquote-back.vercel.app
+DATABASE_ENGINE=postgresql
+DATABASE_URL=<Neon-production-connection-string>
+DATABASE_CONN_MAX_AGE=0
+```
+
+Run migrations against Neon from a trusted local environment or a controlled
+release job before testing the public deployment. Do not configure the import
+or superuser-creation commands as a Vercel request handler.
