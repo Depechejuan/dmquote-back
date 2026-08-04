@@ -2,10 +2,12 @@ import json
 from pathlib import Path
 
 import pytest
+from django.core.management import call_command
 
 from apps.catalog.models import Album, Song
 from apps.catalog.seed import seed_catalog
 from apps.interviews.models import Interview, SourceSnapshot
+from apps.mentions import scanner as scanner_module
 from apps.mentions.models import InterviewEntityLink
 from apps.mentions.scanner import scan_mentions
 from apps.transcripts.models import Transcript, TranscriptParagraph, TranscriptSection
@@ -287,3 +289,91 @@ def test_repeated_scan_does_not_duplicate_and_preserves_verified_link(tmp_path):
     assert second.suggestions_existing == 1
     assert InterviewEntityLink.objects.count() == 1
     assert InterviewEntityLink.objects.get().review_status == InterviewEntityLink.ReviewStatus.VERIFIED
+
+
+@pytest.mark.django_db
+def test_scan_preserves_repeated_mentions_and_verified_links():
+    album = Album.objects.create(title="Violator", slug="violator-repeated")
+    song = Song.objects.create(title="New Life", slug="new-life-repeated", album=album)
+    interview = Interview.objects.create(
+        title="1981-08-23 Television Interview",
+        slug="1981-08-23-television-interview-repeated",
+        source_url="https://dmlive.wiki/wiki/1981-08-23_Television_Interview",
+        source_page_id=205,
+    )
+    transcript = Transcript.objects.create(interview=interview)
+    section = TranscriptSection.objects.create(
+        transcript=transcript,
+        order=1,
+        heading="Transcript",
+        section_type=TranscriptSection.SectionType.TRANSCRIPT,
+    )
+    paragraph = TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=1,
+        text="New Life was an early song. We still play New Life today.",
+    )
+
+    first = scan_mentions()
+    links = list(InterviewEntityLink.objects.filter(song=song).order_by("start_offset"))
+    assert first.suggestions_created == 2
+    assert len(links) == 2
+    assert links[0].end_offset < links[1].start_offset
+    assert [paragraph.text[link.start_offset : link.end_offset] for link in links] == [
+        "New Life",
+        "New Life",
+    ]
+
+    links[0].review_status = InterviewEntityLink.ReviewStatus.VERIFIED
+    links[0].save(update_fields=["review_status", "updated_at"])
+    second = scan_mentions()
+    links = list(InterviewEntityLink.objects.filter(song=song).order_by("start_offset"))
+    assert second.suggestions_created == 0
+    assert second.suggestions_existing == 1
+    assert len(links) == 2
+    assert links[0].review_status == InterviewEntityLink.ReviewStatus.VERIFIED
+
+
+@pytest.mark.django_db
+def test_scan_report_is_written_as_json(tmp_path):
+    report_path = tmp_path / "reports" / "phase5.json"
+
+    call_command("scan_mentions", dry_run=True, report=str(report_path))
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["interviews_scanned"] == 0
+    assert report["paragraphs_scanned"] == 0
+    assert report["conflicts_detected"] == 0
+    assert report["errors"] == []
+
+
+@pytest.mark.django_db
+def test_scan_records_a_failed_interview_and_continues(monkeypatch):
+    failing = Interview.objects.create(
+        title="Failing interview",
+        slug="failing-interview",
+        source_url="https://dmlive.wiki/wiki/Failing_interview",
+        source_page_id=206,
+    )
+    healthy = Interview.objects.create(
+        title="Healthy interview",
+        slug="healthy-interview",
+        source_url="https://dmlive.wiki/wiki/Healthy_interview",
+        source_page_id=207,
+    )
+    original = scanner_module.explicit_links_for_interview
+
+    def fail_one(interview, *, snapshot=None):
+        if interview.pk == failing.pk:
+            raise OSError("snapshot cannot be read")
+        return original(interview, snapshot=snapshot)
+
+    monkeypatch.setattr(scanner_module, "explicit_links_for_interview", fail_one)
+
+    summary = scanner_module.scan_mentions()
+
+    assert summary.interviews_scanned == 2
+    assert summary.interviews_failed == 1
+    assert summary.errors == ["%s:failing-interview: OSError: snapshot cannot be read" % failing.pk]
+    assert healthy.slug not in " ".join(summary.errors)

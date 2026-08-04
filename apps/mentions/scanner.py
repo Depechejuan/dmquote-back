@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -64,6 +64,16 @@ class ScanSummary:
     suggestions_updated: int = 0
     suggestions_existing: int = 0
     ambiguous_matches_skipped: int = 0
+    conflicts_detected: int = 0
+    interviews_failed: int = 0
+    errors: list[str] | None = None
+
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
+
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
 def scan_mentions(
@@ -101,11 +111,19 @@ def scan_mentions(
         summary.interviews_scanned += 1
         paragraphs = paragraphs_by_interview.get(current_interview.pk, [])
         summary.paragraphs_scanned += len(paragraphs)
-        explicit_links = explicit_links_for_interview(
-            current_interview, snapshot=snapshots_by_interview.get(current_interview.pk)
-        )
-        candidates, skipped = find_candidates(paragraphs, targets, explicit_links)
+        try:
+            explicit_links = explicit_links_for_interview(
+                current_interview, snapshot=snapshots_by_interview.get(current_interview.pk)
+            )
+            candidates, skipped = find_candidates(paragraphs, targets, explicit_links)
+        except (OSError, UnicodeError, ValueError) as exc:
+            summary.interviews_failed += 1
+            summary.errors.append(
+                f"{current_interview.pk}:{current_interview.slug}: {type(exc).__name__}: {exc}"
+            )
+            continue
         summary.ambiguous_matches_skipped += skipped
+        summary.conflicts_detected += skipped
         summary.candidates_found += len(candidates)
         if not dry_run:
             candidates_to_persist.extend(candidates)
