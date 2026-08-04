@@ -36,6 +36,8 @@ class CatalogSong:
     release_year: int | None
     aliases: list[str]
     legacy_titles: list[str]
+    track_number: int | None
+    track_number_provided: bool
 
 
 def seed_catalog(path: str | Path, *, dry_run: bool = False) -> CatalogSeedSummary:
@@ -156,31 +158,54 @@ def collect_songs(
 ) -> list[CatalogSong]:
     songs: list[CatalogSong] = []
     for album_data in albums_data:
-        for song_data in album_data.get("songs", []):
+        for track_number, song_data in enumerate(album_data.get("songs", []), start=1):
             songs.append(
                 catalog_song(
                     song_data,
                     albums.get(album_data["title"]) if albums is not None else None,
                     album_data.get("release_year"),
+                    track_number,
                 )
             )
     for song_data in standalone_data or []:
         default_year = song_data.get("release_year") if isinstance(song_data, dict) else None
-        songs.append(catalog_song(song_data, None, default_year))
+        songs.append(catalog_song(song_data, None, default_year, None))
     return songs
 
 
-def catalog_song(song_data, album: Album | None, default_release_year: int | None) -> CatalogSong:
+def catalog_song(
+    song_data,
+    album: Album | None,
+    default_release_year: int | None,
+    default_track_number: int | None,
+) -> CatalogSong:
     if isinstance(song_data, str):
-        return CatalogSong(song_data, album, default_release_year, [], [])
+        return CatalogSong(
+            song_data,
+            album,
+            default_release_year,
+            [],
+            [],
+            default_track_number,
+            False,
+        )
     if not isinstance(song_data, dict) or not song_data.get("title"):
         raise ValueError("Each catalog song must be a title or an object with a title")
+    track_number = song_data.get("track_number", default_track_number)
+    if track_number is not None and (
+        isinstance(track_number, bool)
+        or not isinstance(track_number, int)
+        or track_number < 1
+    ):
+        raise ValueError(f"Song track_number must be a positive integer: {song_data['title']!r}")
     return CatalogSong(
         title=song_data["title"],
         album=album,
         release_year=song_data.get("release_year", default_release_year),
         aliases=list(song_data.get("aliases", [])),
         legacy_titles=list(song_data.get("legacy_titles", [])),
+        track_number=track_number,
+        track_number_provided="track_number" in song_data,
     )
 
 
@@ -233,6 +258,8 @@ def upsert_songs(songs_data: list[CatalogSong], summary: CatalogSeedSummary) -> 
                 used_slugs.add(existing.slug)
             existing.album = catalog_song_data.album
             existing.release_year = catalog_song_data.release_year
+            if catalog_song_data.track_number_provided or existing.track_number is None:
+                existing.track_number = catalog_song_data.track_number
             all_songs[title] = existing
             continue
         song = Song(
@@ -240,6 +267,7 @@ def upsert_songs(songs_data: list[CatalogSong], summary: CatalogSeedSummary) -> 
             slug=unique_slug(used_slugs, title),
             album=catalog_song_data.album,
             release_year=catalog_song_data.release_year,
+            track_number=catalog_song_data.track_number,
         )
         used_slugs.add(song.slug)
         new_songs.append(song)
@@ -248,7 +276,7 @@ def upsert_songs(songs_data: list[CatalogSong], summary: CatalogSeedSummary) -> 
     if new_songs:
         Song.objects.bulk_create(new_songs)
     Song.objects.bulk_update(
-        all_songs.values(), ["title", "slug", "album", "release_year"]
+        all_songs.values(), ["title", "slug", "album", "release_year", "track_number"]
     )
     return all_songs
 

@@ -42,6 +42,8 @@ def test_versioned_catalog_seed_is_idempotent():
     assert Song.objects.get(title="Pleasure, Little Treasure").album is None
     assert Song.objects.get(title="Sacred").album.title == "Music for the Masses"
     assert Song.objects.get(title="Easy Tiger").album.title == "Exciter"
+    assert Song.objects.get(title="New Life").track_number == 1
+    assert Song.objects.get(title="Any Second Now (Voices)").track_number == 10
 
 
 @pytest.mark.django_db
@@ -77,6 +79,33 @@ def test_catalog_seed_supports_compilations_without_detaching_songs(tmp_path):
     assert Song.objects.get(title="Enjoy the Silence").album == album
     manually_marked.refresh_from_db()
     assert manually_marked.is_compilation is True
+
+
+@pytest.mark.django_db
+def test_catalog_seed_preserves_manual_track_number(tmp_path):
+    album = Album.objects.create(title="Speak & Spell", slug="speak-and-spell")
+    song = Song.objects.create(
+        title="New Life",
+        slug="new-life-manual-position",
+        album=album,
+        track_number=9,
+    )
+    path = tmp_path / "position-catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": "test-position",
+                "albums": [{"title": "Speak & Spell", "songs": ["New Life"]}],
+                "standalone_songs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    seed_catalog(path)
+
+    song.refresh_from_db()
+    assert song.track_number == 9
 
 
 @pytest.mark.django_db

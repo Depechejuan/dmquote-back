@@ -1,4 +1,4 @@
-from django.db.models import Prefetch, Q
+from django.db.models import F, Prefetch, Q
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -23,7 +23,15 @@ def music_catalog(request):
     """Return the public music catalogue grouped into albums and standalone songs."""
 
     albums = Album.objects.prefetch_related(
-        Prefetch("songs", queryset=Song.objects.order_by("title", "id"))
+        Prefetch(
+            "songs",
+            queryset=Song.objects.order_by(
+                "is_b_side",
+                F("track_number").asc(nulls_last=True),
+                "title",
+                "id",
+            ),
+        )
     ).order_by("release_year", "title", "id")
     standalone_songs = Song.objects.filter(album__isnull=True).order_by("title", "id")
     payload = {

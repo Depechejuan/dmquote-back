@@ -26,7 +26,16 @@ class SongSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Song
-        fields = ["id", "title", "slug", "album", "release_year", "is_b_side", "notes"]
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "album",
+            "release_year",
+            "track_number",
+            "is_b_side",
+            "notes",
+        ]
 
 
 class SongSummarySerializer(serializers.ModelSerializer):
@@ -34,13 +43,21 @@ class SongSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Song
-        fields = ["id", "title", "slug", "album", "release_year", "is_b_side"]
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "album",
+            "release_year",
+            "track_number",
+            "is_b_side",
+        ]
 
 
 class MusicSongSerializer(serializers.ModelSerializer):
     class Meta:
         model = Song
-        fields = ["id", "title", "slug", "is_b_side"]
+        fields = ["id", "title", "slug", "track_number", "is_b_side"]
 
 
 class MusicAlbumSerializer(serializers.ModelSerializer):
