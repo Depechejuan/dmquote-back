@@ -25,7 +25,8 @@ class AlbumAliasAdmin(admin.ModelAdmin):
 
 @admin.register(Song)
 class SongAdmin(admin.ModelAdmin):
-    list_display = ("title", "album", "release_year")
+    list_display = ("title", "album", "release_year", "is_b_side")
+    list_filter = ("is_b_side", "album")
     search_fields = ("title", "aliases__value", "album__title")
     prepopulated_fields = {"slug": ("title",)}
 

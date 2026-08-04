@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.interviews",
     "apps.transcripts",
     "apps.mentions",
+    "apps.editorial",
     "apps.ingestion",
 ]
 
@@ -143,6 +144,7 @@ CORS_ALLOWED_ORIGINS = sorted(
         "https://dmquote.netlify.app",
     }
 )
+CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = sorted(
     {
         *env_list("DJANGO_CSRF_TRUSTED_ORIGINS"),
@@ -153,6 +155,8 @@ CSRF_TRUSTED_ORIGINS = sorted(
     }
 )
 CSRF_COOKIE_NAME = "dmquote_csrftoken"
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG

@@ -52,6 +52,7 @@ class Song(models.Model):
         Album, on_delete=models.SET_NULL, null=True, blank=True, related_name="songs"
     )
     release_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_b_side = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
 
     class Meta:

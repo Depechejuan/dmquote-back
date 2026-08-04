@@ -22,6 +22,11 @@ class InterviewEntityLink(models.Model):
         REJECTED = "rejected", "Rejected"
         NEEDS_REVIEW = "needs_review", "Needs review"
 
+    class ExcerptType(models.TextChoices):
+        QA = "qa", "Question and answer"
+        PARAGRAPH = "paragraph", "Paragraph"
+        NEEDS_REVIEW = "needs_review", "Needs review"
+
     interview = models.ForeignKey(
         Interview, on_delete=models.CASCADE, related_name="entity_links"
     )
@@ -37,6 +42,20 @@ class InterviewEntityLink(models.Model):
         null=True,
         blank=True,
         related_name="entity_links",
+    )
+    question_paragraph = models.ForeignKey(
+        TranscriptParagraph,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="question_entity_links",
+    )
+    answer_paragraph = models.ForeignKey(
+        TranscriptParagraph,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="answer_entity_links",
     )
     section = models.ForeignKey(
         TranscriptSection,
@@ -54,6 +73,11 @@ class InterviewEntityLink(models.Model):
     start_offset = models.PositiveIntegerField(null=True, blank=True)
     end_offset = models.PositiveIntegerField(null=True, blank=True)
     evidence = models.TextField(blank=True)
+    excerpt_type = models.CharField(
+        max_length=12,
+        choices=ExcerptType.choices,
+        default=ExcerptType.PARAGRAPH,
+    )
     paragraph_content_hash = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -109,6 +133,20 @@ class InterviewEntityLink(models.Model):
             raise ValidationError("The section must belong to the linked interview.")
         if self.paragraph_id and self.section_id and self.paragraph.section_id != self.section_id:
             raise ValidationError("The paragraph must belong to the linked section.")
+        for related_paragraph in (self.question_paragraph, self.answer_paragraph):
+            if (
+                related_paragraph
+                and related_paragraph.transcript.interview_id != self.interview_id
+            ):
+                raise ValidationError("Question and answer paragraphs must belong to the interview.")
+        if self.excerpt_type == self.ExcerptType.QA and not (
+            self.question_paragraph_id and self.answer_paragraph_id
+        ):
+            raise ValidationError("A Q/A excerpt requires both a question and an answer paragraph.")
+        if self.excerpt_type != self.ExcerptType.QA and (
+            self.question_paragraph_id or self.answer_paragraph_id
+        ):
+            raise ValidationError("Only Q/A excerpts can reference question and answer paragraphs.")
         if (self.start_offset is None) != (self.end_offset is None):
             raise ValidationError("Start and end offsets must be provided together.")
         if self.start_offset is not None and self.end_offset < self.start_offset:

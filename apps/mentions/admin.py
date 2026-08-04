@@ -85,6 +85,7 @@ class InterviewEntityLinkAdmin(admin.ModelAdmin):
         "section",
         "paragraph",
         "method",
+        "excerpt_type",
         "review_status",
         "confidence",
         "evidence_preview",
@@ -98,7 +99,15 @@ class InterviewEntityLinkAdmin(admin.ModelAdmin):
         "paragraph__text",
         "evidence",
     )
-    raw_id_fields = ("interview", "song", "album", "section", "paragraph")
+    raw_id_fields = (
+        "interview",
+        "song",
+        "album",
+        "section",
+        "paragraph",
+        "question_paragraph",
+        "answer_paragraph",
+    )
     list_select_related = ("interview", "song", "album", "section", "paragraph")
     actions = [
         verify_mentions,

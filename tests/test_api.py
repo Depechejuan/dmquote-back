@@ -49,7 +49,7 @@ def test_music_catalog_groups_and_orders_albums_and_standalone_songs():
     ]
     assert [song["title"] for song in payload["standalone_songs"]] == ["Unattached"]
     assert all(
-        set(song) == {"id", "title", "slug"}
+        set(song) == {"id", "title", "slug", "is_b_side"}
         for album in payload["albums"]
         for song in album["songs"]
     )
