@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Iterable
 
@@ -53,6 +53,10 @@ class MentionCandidate:
     end: int
     method: str
     confidence: float
+    question_paragraph: TranscriptParagraph | None = None
+    answer_paragraph: TranscriptParagraph | None = None
+    excerpt_type: str = InterviewEntityLink.ExcerptType.PARAGRAPH
+    review_status: str = InterviewEntityLink.ReviewStatus.SUGGESTED
 
 
 @dataclass
@@ -65,6 +69,9 @@ class ScanSummary:
     suggestions_existing: int = 0
     ambiguous_matches_skipped: int = 0
     conflicts_detected: int = 0
+    qa_excerpts: int = 0
+    paragraph_excerpts: int = 0
+    needs_review_excerpts: int = 0
     interviews_failed: int = 0
     errors: list[str] | None = None
 
@@ -125,6 +132,29 @@ def scan_mentions(
         summary.ambiguous_matches_skipped += skipped
         summary.conflicts_detected += skipped
         summary.candidates_found += len(candidates)
+        excerpt_map = build_excerpt_map(paragraphs)
+        candidates = [
+            replace(
+                candidate,
+                question_paragraph=excerpt_map[candidate.paragraph.pk].question_paragraph,
+                answer_paragraph=excerpt_map[candidate.paragraph.pk].answer_paragraph,
+                excerpt_type=excerpt_map[candidate.paragraph.pk].excerpt_type,
+                review_status=excerpt_map[candidate.paragraph.pk].review_status,
+            )
+            for candidate in candidates
+        ]
+        summary.qa_excerpts += sum(
+            candidate.excerpt_type == InterviewEntityLink.ExcerptType.QA
+            for candidate in candidates
+        )
+        summary.paragraph_excerpts += sum(
+            candidate.excerpt_type == InterviewEntityLink.ExcerptType.PARAGRAPH
+            for candidate in candidates
+        )
+        summary.needs_review_excerpts += sum(
+            candidate.excerpt_type == InterviewEntityLink.ExcerptType.NEEDS_REVIEW
+            for candidate in candidates
+        )
         if not dry_run:
             candidates_to_persist.extend(candidates)
     if not dry_run:
@@ -229,6 +259,142 @@ def find_candidates(
     return list(candidates.values()), skipped_ambiguous
 
 
+QUESTION_SPEAKER_RE = re.compile(
+    r"^(?:q|question(?:\s+\d+)?|translation\s+question(?:\s+\d+)?|"
+    r"interviewer(?:\s+\(translation\))?|journalist|host|show\s+host|"
+    r"announcer|presenter|reporter|moderator)$",
+    re.IGNORECASE,
+)
+TRANSLATION_QUESTION_RE = re.compile(
+    r"^(?:translation\s+question|question\s+\(translation\))", re.IGNORECASE
+)
+ANSWER_SPEAKER_RE = re.compile(r"^(?:a|answer)$", re.IGNORECASE)
+DEPECHE_SPEAKER_ALIASES = {
+    "a",
+    "af",
+    "alan",
+    "alan gore",
+    "alan wilder",
+    "andy",
+    "andy fletcher",
+    "d",
+    "dave",
+    "dave gahan",
+    "dg",
+    "f",
+    "fletcher",
+    "fletch",
+    "gahan",
+    "gore",
+    "m",
+    "mg",
+    "martin",
+    "martin gore",
+    "vince",
+    "vince clarke",
+    "wilder",
+    "aw",
+}
+
+
+@dataclass(frozen=True)
+class ExcerptMatch:
+    excerpt_type: str
+    question_paragraph: TranscriptParagraph | None = None
+    answer_paragraph: TranscriptParagraph | None = None
+    review_status: str = InterviewEntityLink.ReviewStatus.SUGGESTED
+
+
+def build_excerpt_map(paragraphs: list[TranscriptParagraph]) -> dict[int, ExcerptMatch]:
+    """Resolve Q/A pairs once for all candidates in an interview."""
+
+    return {
+        paragraph.pk: find_excerpt_match(paragraphs, index)
+        for index, paragraph in enumerate(paragraphs)
+    }
+
+
+def find_excerpt_match(
+    paragraphs: list[TranscriptParagraph], index: int
+) -> ExcerptMatch:
+    """Return a reliable Q/A pair or a reviewable paragraph fallback."""
+
+    paragraph = paragraphs[index]
+    if is_question_paragraph(paragraph):
+        answer = find_following_answer(paragraphs, index)
+        if answer is not None:
+            return ExcerptMatch(
+                InterviewEntityLink.ExcerptType.QA,
+                question_paragraph=paragraph,
+                answer_paragraph=answer,
+            )
+        return ExcerptMatch(
+            InterviewEntityLink.ExcerptType.NEEDS_REVIEW,
+            review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+        )
+
+    if is_answer_paragraph(paragraph):
+        question = find_previous_question(paragraphs, index)
+        if question is not None:
+            return ExcerptMatch(
+                InterviewEntityLink.ExcerptType.QA,
+                question_paragraph=question,
+                answer_paragraph=paragraph,
+            )
+        return ExcerptMatch(
+            InterviewEntityLink.ExcerptType.NEEDS_REVIEW,
+            review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+        )
+
+    return ExcerptMatch(InterviewEntityLink.ExcerptType.PARAGRAPH)
+
+
+def is_question_paragraph(paragraph: TranscriptParagraph) -> bool:
+    speaker = normalize_speaker(paragraph.speaker)
+    return bool(QUESTION_SPEAKER_RE.fullmatch(speaker) or "?" in paragraph.text)
+
+
+def is_answer_paragraph(paragraph: TranscriptParagraph) -> bool:
+    if is_question_paragraph(paragraph):
+        return False
+    speaker = normalize_speaker(paragraph.speaker)
+    return bool(ANSWER_SPEAKER_RE.fullmatch(speaker) or speaker in DEPECHE_SPEAKER_ALIASES)
+
+
+def normalize_speaker(speaker: str) -> str:
+    return re.sub(r"\s+", " ", speaker.strip().casefold()).strip()
+
+
+def find_following_answer(
+    paragraphs: list[TranscriptParagraph], index: int
+) -> TranscriptParagraph | None:
+    current = paragraphs[index]
+    for candidate in paragraphs[index + 1 : index + 5]:
+        if candidate.section_id != current.section_id:
+            break
+        if is_answer_paragraph(candidate):
+            return candidate
+        if is_question_paragraph(candidate) and not is_translation_question(candidate):
+            break
+    return None
+
+
+def find_previous_question(
+    paragraphs: list[TranscriptParagraph], index: int
+) -> TranscriptParagraph | None:
+    current = paragraphs[index]
+    for candidate in reversed(paragraphs[max(0, index - 4) : index]):
+        if candidate.section_id != current.section_id:
+            break
+        if is_question_paragraph(candidate):
+            return candidate
+    return None
+
+
+def is_translation_question(paragraph: TranscriptParagraph) -> bool:
+    return bool(TRANSLATION_QUESTION_RE.match(normalize_speaker(paragraph.speaker)))
+
+
 def build_target_index(targets: Iterable[Target]) -> dict[str, list[Target]]:
     """Index normalized titles and aliases without hiding collisions."""
 
@@ -265,9 +431,12 @@ def persist_candidate(candidate: MentionCandidate) -> str:
             **target_filter,
             method=InterviewEntityLink.Method.RULES,
             confidence=candidate.confidence,
-            review_status=InterviewEntityLink.ReviewStatus.SUGGESTED,
+            review_status=candidate.review_status,
             evidence=build_evidence(candidate.paragraph.text, candidate.start, candidate.end),
             paragraph_content_hash=hash_text(candidate.paragraph.text),
+            excerpt_type=candidate.excerpt_type,
+            question_paragraph=candidate.question_paragraph,
+            answer_paragraph=candidate.answer_paragraph,
         )
         return "created"
     if existing.review_status != InterviewEntityLink.ReviewStatus.SUGGESTED:
@@ -276,7 +445,23 @@ def persist_candidate(candidate: MentionCandidate) -> str:
     existing.confidence = candidate.confidence
     existing.evidence = build_evidence(candidate.paragraph.text, candidate.start, candidate.end)
     existing.paragraph_content_hash = hash_text(candidate.paragraph.text)
-    existing.save(update_fields=["method", "confidence", "evidence", "paragraph_content_hash", "updated_at"])
+    existing.excerpt_type = candidate.excerpt_type
+    existing.review_status = candidate.review_status
+    existing.question_paragraph = candidate.question_paragraph
+    existing.answer_paragraph = candidate.answer_paragraph
+    existing.save(
+        update_fields=[
+            "method",
+            "confidence",
+            "evidence",
+            "paragraph_content_hash",
+            "excerpt_type",
+            "review_status",
+            "question_paragraph",
+            "answer_paragraph",
+            "updated_at",
+        ]
+    )
     return "updated"
 
 
@@ -304,11 +489,14 @@ def persist_candidates(candidates: list[MentionCandidate]) -> tuple[int, int, in
                 scope=InterviewEntityLink.Scope.PARAGRAPH,
                 method=InterviewEntityLink.Method.RULES,
                 confidence=candidate.confidence,
-                review_status=InterviewEntityLink.ReviewStatus.SUGGESTED,
+                review_status=candidate.review_status,
                 start_offset=candidate.start,
                 end_offset=candidate.end,
                 evidence=build_evidence(candidate.paragraph.text, candidate.start, candidate.end),
                 paragraph_content_hash=hash_text(candidate.paragraph.text),
+                excerpt_type=candidate.excerpt_type,
+                question_paragraph=candidate.question_paragraph,
+                answer_paragraph=candidate.answer_paragraph,
             )
             if candidate.target.kind == "song":
                 link.song = candidate.target.entity
@@ -324,12 +512,26 @@ def persist_candidates(candidates: list[MentionCandidate]) -> tuple[int, int, in
             link.confidence = candidate.confidence
             link.evidence = build_evidence(candidate.paragraph.text, candidate.start, candidate.end)
             link.paragraph_content_hash = hash_text(candidate.paragraph.text)
+            link.excerpt_type = candidate.excerpt_type
+            link.review_status = candidate.review_status
+            link.question_paragraph = candidate.question_paragraph
+            link.answer_paragraph = candidate.answer_paragraph
             updated_links.append(link)
             updated += 1
     InterviewEntityLink.objects.bulk_create(new_links)
     InterviewEntityLink.objects.bulk_update(
         updated_links,
-        ["method", "confidence", "evidence", "paragraph_content_hash", "updated_at"],
+        [
+            "method",
+            "confidence",
+            "evidence",
+            "paragraph_content_hash",
+            "excerpt_type",
+            "review_status",
+            "question_paragraph",
+            "answer_paragraph",
+            "updated_at",
+        ],
     )
     return created, updated, existing
 

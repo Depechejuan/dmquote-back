@@ -245,6 +245,85 @@ def test_scanner_sends_song_album_title_collisions_to_review():
 
 
 @pytest.mark.django_db
+def test_scanner_builds_qa_excerpt_from_question_and_answer_paragraphs():
+    album = Album.objects.create(title="Speak & Spell", slug="speak-and-spell")
+    Song.objects.create(title="New Life", slug="new-life", album=album)
+    Song.objects.create(title="Enjoy the Silence", slug="enjoy-the-silence", album=album)
+    interview = Interview.objects.create(
+        title="1981-11-09 Radio Interview",
+        slug="1981-11-09-radio-interview-qa",
+        source_url="https://dmlive.wiki/wiki/1981-11-09_Radio_Interview",
+        source_page_id=208,
+    )
+    transcript = Transcript.objects.create(interview=interview)
+    section = TranscriptSection.objects.create(
+        transcript=transcript,
+        order=1,
+        heading="Interview transcript",
+        section_type=TranscriptSection.SectionType.TRANSCRIPT,
+    )
+    question = TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=1,
+        speaker="Question",
+        text="Did you write New Life yourselves?",
+    )
+    answer = TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=2,
+        speaker="Dave Gahan",
+        text="Yes, and we also recorded Enjoy the Silence later.",
+    )
+
+    summary = scan_mentions()
+
+    assert summary.qa_excerpts == 2
+    links = list(InterviewEntityLink.objects.order_by("start_offset"))
+    assert len(links) == 2
+    assert all(link.excerpt_type == InterviewEntityLink.ExcerptType.QA for link in links)
+    assert all(link.review_status == InterviewEntityLink.ReviewStatus.SUGGESTED for link in links)
+    assert all(link.question_paragraph_id == question.id for link in links)
+    assert all(link.answer_paragraph_id == answer.id for link in links)
+
+
+@pytest.mark.django_db
+def test_scanner_marks_unpaired_question_excerpt_for_manual_review():
+    album = Album.objects.create(title="Speak & Spell", slug="speak-and-spell-unpaired")
+    song = Song.objects.create(title="New Life", slug="new-life-unpaired", album=album)
+    interview = Interview.objects.create(
+        title="1981-11-09 Unpaired Interview",
+        slug="1981-11-09-unpaired-interview",
+        source_url="https://dmlive.wiki/wiki/1981-11-09_Unpaired_Interview",
+        source_page_id=209,
+    )
+    transcript = Transcript.objects.create(interview=interview)
+    section = TranscriptSection.objects.create(
+        transcript=transcript,
+        order=1,
+        heading="Interview transcript",
+        section_type=TranscriptSection.SectionType.TRANSCRIPT,
+    )
+    TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=1,
+        speaker="Q",
+        text="Did you perform New Life live?",
+    )
+
+    summary = scan_mentions()
+    link = InterviewEntityLink.objects.get(song=song)
+
+    assert summary.needs_review_excerpts == 1
+    assert link.excerpt_type == InterviewEntityLink.ExcerptType.NEEDS_REVIEW
+    assert link.review_status == InterviewEntityLink.ReviewStatus.NEEDS_REVIEW
+    assert link.question_paragraph_id is None
+    assert link.answer_paragraph_id is None
+
+
+@pytest.mark.django_db
 def test_repeated_scan_does_not_duplicate_and_preserves_verified_link(tmp_path):
     album = Album.objects.create(title="Violator", slug="violator")
     Song.objects.create(title="Enjoy the Silence", slug="enjoy-the-silence", album=album)
