@@ -76,7 +76,7 @@ class AlbumViewSet(ReadOnlyModelViewSet):
     queryset = Album.objects.all()
     serializer_class = AlbumSerializer
     lookup_field = "slug"
-    filterset_fields = ["release_year"]
+    filterset_fields = ["release_year", "is_compilation"]
     search_fields = ["title", "aliases__value"]
     ordering_fields = ["title", "release_year"]
 

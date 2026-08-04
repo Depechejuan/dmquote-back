@@ -45,6 +45,41 @@ def test_versioned_catalog_seed_is_idempotent():
 
 
 @pytest.mark.django_db
+def test_catalog_seed_supports_compilations_without_detaching_songs(tmp_path):
+    manually_marked = Album.objects.create(
+        title="Manual Collection",
+        slug="manual-collection",
+        is_compilation=True,
+    )
+    path = tmp_path / "compilation-catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": "test-compilation",
+                "albums": [
+                    {
+                        "title": "The Singles 86-98",
+                        "release_year": 1998,
+                        "is_compilation": True,
+                        "songs": ["Enjoy the Silence"],
+                    }
+                ],
+                "standalone_songs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    seed_catalog(path)
+
+    album = Album.objects.get(title="The Singles 86-98")
+    assert album.is_compilation is True
+    assert Song.objects.get(title="Enjoy the Silence").album == album
+    manually_marked.refresh_from_db()
+    assert manually_marked.is_compilation is True
+
+
+@pytest.mark.django_db
 def test_catalog_migrates_legacy_titles_and_reports_unmatched_records():
     album = Album.objects.create(title="Music for the Masses", slug="music-for-the-masses")
     Song.objects.create(

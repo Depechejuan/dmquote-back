@@ -33,7 +33,7 @@ def test_empty_catalogue_endpoints_are_public(path):
 @pytest.mark.django_db
 def test_music_catalog_groups_and_orders_albums_and_standalone_songs():
     late_album = Album.objects.create(title="Zeta", slug="zeta", release_year=1990)
-    Album.objects.create(title="Alpha", slug="alpha", release_year=1981)
+    Album.objects.create(title="Alpha", slug="alpha", release_year=1981, is_compilation=True)
     Song.objects.create(title="Second", slug="second", album=late_album)
     Song.objects.create(title="First", slug="first", album=late_album)
     Song.objects.create(title="Unattached", slug="unattached")
@@ -48,6 +48,10 @@ def test_music_catalog_groups_and_orders_albums_and_standalone_songs():
         "Second",
     ]
     assert [song["title"] for song in payload["standalone_songs"]] == ["Unattached"]
+    assert payload["albums"][0]["is_compilation"] is True
+    assert payload["albums"][1]["is_compilation"] is False
+    compilation_response = APIClient().get("/api/v1/albums/?is_compilation=true")
+    assert [album["title"] for album in compilation_response.json()["results"]] == ["Alpha"]
     assert all(
         set(song) == {"id", "title", "slug", "is_b_side"}
         for album in payload["albums"]

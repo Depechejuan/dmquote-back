@@ -12,7 +12,8 @@ class PersonAdmin(admin.ModelAdmin):
 
 @admin.register(Album)
 class AlbumAdmin(admin.ModelAdmin):
-    list_display = ("title", "release_year")
+    list_display = ("title", "release_year", "is_compilation")
+    list_filter = ("is_compilation",)
     search_fields = ("title", "aliases__value")
     prepopulated_fields = {"slug": ("title",)}
 

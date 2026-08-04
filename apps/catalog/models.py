@@ -19,6 +19,7 @@ class Album(models.Model):
     title = models.CharField(max_length=160, unique=True)
     slug = models.SlugField(max_length=180, unique=True)
     release_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_compilation = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
 
     class Meta:

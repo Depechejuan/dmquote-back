@@ -97,14 +97,20 @@ def upsert_albums(albums_data: list[dict], summary: CatalogSeedSummary) -> dict[
     new_albums = []
     for album_data in albums_data:
         title = album_data["title"]
+        is_compilation = album_data.get("is_compilation", False)
+        if not isinstance(is_compilation, bool):
+            raise ValueError(f"Album is_compilation must be a boolean: {title!r}")
         if title in existing:
             summary.albums_updated += 1
             existing[title].release_year = album_data.get("release_year")
+            if "is_compilation" in album_data:
+                existing[title].is_compilation = is_compilation
             continue
         album = Album(
             title=title,
             slug=unique_slug(used_slugs, title),
             release_year=album_data.get("release_year"),
+            is_compilation=is_compilation,
         )
         used_slugs.add(album.slug)
         new_albums.append(album)
@@ -118,7 +124,7 @@ def upsert_albums(albums_data: list[dict], summary: CatalogSeedSummary) -> dict[
             album.release_year = next(
                 item.get("release_year") for item in albums_data if item["title"] == title
             )
-    Album.objects.bulk_update(all_albums.values(), ["release_year"])
+    Album.objects.bulk_update(all_albums.values(), ["release_year", "is_compilation"])
     return all_albums
 
 

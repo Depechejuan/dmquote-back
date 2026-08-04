@@ -12,13 +12,13 @@ class PersonSerializer(serializers.ModelSerializer):
 class AlbumSerializer(serializers.ModelSerializer):
     class Meta:
         model = Album
-        fields = ["id", "title", "slug", "release_year", "notes"]
+        fields = ["id", "title", "slug", "release_year", "is_compilation", "notes"]
 
 
 class AlbumSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Album
-        fields = ["id", "title", "slug", "release_year"]
+        fields = ["id", "title", "slug", "release_year", "is_compilation"]
 
 
 class SongSerializer(serializers.ModelSerializer):
@@ -48,7 +48,7 @@ class MusicAlbumSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Album
-        fields = ["id", "title", "slug", "release_year", "songs"]
+        fields = ["id", "title", "slug", "release_year", "is_compilation", "songs"]
 
 
 class MusicCatalogSerializer(serializers.Serializer):
