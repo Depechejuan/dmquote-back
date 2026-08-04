@@ -88,6 +88,48 @@ def test_non_staff_user_cannot_open_editorial_admin(admin_client):
 
 
 @pytest.mark.django_db
+def test_song_admin_bulk_assigns_songs_to_a_compilation(admin_client):
+    compilation = Album.objects.create(
+        title="The Singles 86-98",
+        slug="the-singles-86-98",
+        release_year=1998,
+        is_compilation=True,
+    )
+    first = Song.objects.create(title="New Life", slug="new-life-bulk")
+    second = Song.objects.create(title="Enjoy the Silence", slug="enjoy-the-silence-bulk")
+    changelist = reverse("admin:catalog_song_changelist")
+
+    admin_instance = admin.site._registry[Song]
+    assert admin_instance.list_select_related == ("album",)
+
+    form_response = admin_client.post(
+        changelist,
+        {
+            "action": "assign_selected_songs_to_release",
+            "_selected_action": [str(first.pk), str(second.pk)],
+        },
+    )
+    assert form_response.status_code == 200
+    assert b"Assign songs to an album or compilation" in form_response.content
+
+    response = admin_client.post(
+        changelist,
+        {
+            "action": "assign_selected_songs_to_release",
+            "apply": "Assign songs",
+            "_selected_action": [str(first.pk), str(second.pk)],
+            "album": str(compilation.pk),
+        },
+        follow=True,
+    )
+
+    assert response.status_code == 200
+    assert set(Song.objects.filter(pk__in=[first.pk, second.pk]).values_list("album_id", flat=True)) == {
+        compilation.pk
+    }
+
+
+@pytest.mark.django_db
 def test_interview_admin_action_propagates_authorization_and_privacy(admin_client):
     interview = make_interview()
     transcript, section, paragraph = make_transcript(interview)
