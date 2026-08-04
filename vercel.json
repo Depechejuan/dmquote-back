@@ -4,7 +4,7 @@
   "buildCommand": "python manage.py collectstatic --noinput",
   "functions": {
     "api/index.py": {
-      "includeFiles": ["staticfiles/**"]
+      "includeFiles": "staticfiles/**"
     }
   },
   "routes": [
