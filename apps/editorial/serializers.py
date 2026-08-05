@@ -1,3 +1,5 @@
+import hashlib
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -9,7 +11,7 @@ from apps.catalog.serializers import (
     MusicSongSerializer,
     SongSummarySerializer,
 )
-from apps.interviews.models import Interview
+from apps.interviews.models import Interview, InterviewMentionReview
 from apps.interviews.serializers import (
     InterviewListSerializer,
     InterviewParticipantSerializer,
@@ -76,11 +78,22 @@ class EditorialTranscriptSerializer(serializers.Serializer):
     sections = EditorialSectionSerializer(many=True)
 
 
+class EditorialReviewStateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=InterviewMentionReview.Status.choices)
+    reviewer = serializers.SerializerMethodField()
+    reviewed_at = serializers.DateTimeField(allow_null=True)
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_reviewer(self, obj):
+        return obj.reviewer.get_username() if obj.reviewer_id else None
+
+
 class EditorialInterviewSerializer(serializers.ModelSerializer):
     participants = serializers.SerializerMethodField()
     date = serializers.ReadOnlyField(source="date_display")
     source = SourceAttributionSerializer(source="*", read_only=True)
     transcript = serializers.SerializerMethodField()
+    mention_review = serializers.SerializerMethodField()
 
     class Meta:
         model = Interview
@@ -106,6 +119,7 @@ class EditorialInterviewSerializer(serializers.ModelSerializer):
             "participants",
             "notes",
             "transcript",
+            "mention_review",
         ]
 
     @extend_schema_field(InterviewParticipantSerializer(many=True))
@@ -120,6 +134,37 @@ class EditorialInterviewSerializer(serializers.ModelSerializer):
         if transcript is None:
             return None
         return EditorialTranscriptSerializer(transcript, context=self.context).data
+
+    @extend_schema_field(EditorialReviewStateSerializer)
+    def get_mention_review(self, obj):
+        try:
+            review = obj.mention_review
+        except InterviewMentionReview.DoesNotExist:
+            return {"status": InterviewMentionReview.Status.PENDING, "reviewer": None, "reviewed_at": None}
+        return EditorialReviewStateSerializer(review, context=self.context).data
+
+
+class EditorialInterviewQueueSerializer(InterviewListSerializer):
+    """An interview-led queue, including records with no detected mentions."""
+
+    review = serializers.SerializerMethodField()
+    candidate_count = serializers.IntegerField(read_only=True)
+    verified_count = serializers.IntegerField(read_only=True)
+
+    class Meta(InterviewListSerializer.Meta):
+        fields = InterviewListSerializer.Meta.fields + [
+            "review",
+            "candidate_count",
+            "verified_count",
+        ]
+
+    @extend_schema_field(EditorialReviewStateSerializer)
+    def get_review(self, obj):
+        try:
+            review = obj.mention_review
+        except InterviewMentionReview.DoesNotExist:
+            return {"status": InterviewMentionReview.Status.PENDING, "reviewer": None, "reviewed_at": None}
+        return EditorialReviewStateSerializer(review, context=self.context).data
 
 
 class EditorialMentionSerializer(serializers.ModelSerializer):
@@ -210,30 +255,49 @@ class EditorialMentionUpdateSerializer(serializers.Serializer):
         except Album.DoesNotExist as exc:
             raise serializers.ValidationError({"album_id": "Album not found."}) from exc
 
+    def _section(self, value):
+        if value is None:
+            return None
+        section = TranscriptSection.objects.select_related("transcript").filter(pk=value).first()
+        if section is None:
+            raise serializers.ValidationError({"section_id": "Section not found."})
+        return section
+
+    def _interview(self, attrs):
+        return self.instance.interview
+
+    def _current_id(self, attrs, field_name):
+        if field_name in attrs:
+            return attrs[field_name]
+        if self.instance is None:
+            return None
+        return getattr(self.instance, field_name)
+
+    def _current_value(self, attrs, field_name, default=None):
+        if field_name in attrs:
+            return attrs[field_name]
+        if self.instance is None:
+            return default
+        return getattr(self.instance, field_name)
+
     def validate(self, attrs):
-        instance = self.instance
-        song_id = attrs.get("song_id", instance.song_id)
-        album_id = attrs.get("album_id", instance.album_id)
+        interview = self._interview(attrs)
+        song_id = self._current_id(attrs, "song_id")
+        album_id = self._current_id(attrs, "album_id")
         if bool(song_id) == bool(album_id):
             raise serializers.ValidationError(
                 "A mention must target exactly one song or album."
             )
 
-        song = self._song(song_id) if "song_id" in attrs else instance.song
-        album = self._album(album_id) if "album_id" in attrs else instance.album
+        song = self._song(song_id) if song_id else None
+        album = self._album(album_id) if album_id else None
         attrs["_song"] = song
         attrs["_album"] = album
 
-        scope = attrs.get("scope", instance.scope)
-        section_id = attrs.get("section_id", instance.section_id)
-        paragraph_id = attrs.get("paragraph_id", instance.paragraph_id)
-        section = (
-            TranscriptSection.objects.select_related("transcript").filter(pk=section_id).first()
-            if section_id
-            else None
-        )
-        if section_id and section is None:
-            raise serializers.ValidationError({"section_id": "Section not found."})
+        scope = self._current_value(attrs, "scope", InterviewEntityLink.Scope.PARAGRAPH)
+        section_id = self._current_id(attrs, "section_id")
+        paragraph_id = self._current_id(attrs, "paragraph_id")
+        section = self._section(section_id)
         paragraph = self._paragraph(paragraph_id, "paragraph_id") if paragraph_id else None
         if scope == InterviewEntityLink.Scope.PARAGRAPH:
             if paragraph is None or section is None:
@@ -244,25 +308,27 @@ class EditorialMentionUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Interview scope cannot reference a section or paragraph."
             )
-        if paragraph and paragraph.transcript.interview_id != instance.interview_id:
+        if paragraph and paragraph.transcript.interview_id != interview.pk:
             raise serializers.ValidationError("The paragraph must belong to the interview.")
-        if section and section.transcript.interview_id != instance.interview_id:
+        if section and section.transcript.interview_id != interview.pk:
             raise serializers.ValidationError("The section must belong to the interview.")
         if paragraph and paragraph.section_id != section.id:
             raise serializers.ValidationError(
                 "The paragraph must belong to the selected section."
             )
 
-        question_id = attrs.get("question_paragraph_id", instance.question_paragraph_id)
-        answer_id = attrs.get("answer_paragraph_id", instance.answer_paragraph_id)
+        question_id = self._current_id(attrs, "question_paragraph_id")
+        answer_id = self._current_id(attrs, "answer_paragraph_id")
         question = self._paragraph(question_id, "question_paragraph_id") if question_id else None
         answer = self._paragraph(answer_id, "answer_paragraph_id") if answer_id else None
         for related in (question, answer):
-            if related and related.transcript.interview_id != instance.interview_id:
+            if related and related.transcript.interview_id != interview.pk:
                 raise serializers.ValidationError(
                     "Question and answer paragraphs must belong to the interview."
                 )
-        excerpt_type = attrs.get("excerpt_type", instance.excerpt_type)
+        excerpt_type = self._current_value(
+            attrs, "excerpt_type", InterviewEntityLink.ExcerptType.PARAGRAPH
+        )
         if excerpt_type == InterviewEntityLink.ExcerptType.QA and not (question and answer):
             raise serializers.ValidationError(
                 "A Q/A excerpt requires both a question and an answer paragraph."
@@ -276,22 +342,38 @@ class EditorialMentionUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Start and end offsets must be provided together."
             )
-        start = attrs.get("start_offset", instance.start_offset)
-        end = attrs.get("end_offset", instance.end_offset)
+        start = self._current_value(attrs, "start_offset")
+        end = self._current_value(attrs, "end_offset")
         if (start is None) != (end is None):
             raise serializers.ValidationError(
                 "Start and end offsets must be provided together."
             )
-        if paragraph and start is not None and end is not None and end > len(paragraph.text):
-            raise serializers.ValidationError(
-                "Offsets must point inside the selected paragraph."
-            )
+        if start is not None:
+            if paragraph is None or not (0 <= start < end <= len(paragraph.text)):
+                raise serializers.ValidationError(
+                    "Offsets must define a non-empty range inside the selected paragraph."
+                )
 
+        attrs["_interview"] = interview
         attrs["_section"] = section
         attrs["_paragraph"] = paragraph
         attrs["_question"] = question
         attrs["_answer"] = answer
         return attrs
+
+    def _save_mention(self, instance):
+        if instance.paragraph_id:
+            instance.paragraph_content_hash = hashlib.sha256(
+                instance.paragraph.text.encode("utf-8")
+            ).hexdigest()
+        else:
+            instance.paragraph_content_hash = ""
+        try:
+            instance.full_clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict) from exc
+        instance.save()
+        return instance
 
     def update(self, instance, validated_data):
         if "song_id" in validated_data:
@@ -316,12 +398,59 @@ class EditorialMentionUpdateSerializer(serializers.Serializer):
         ):
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
+        return self._save_mention(instance)
+
+
+class EditorialMentionCreateSerializer(EditorialMentionUpdateSerializer):
+    interview_slug = serializers.SlugField(write_only=True)
+    song_id = serializers.IntegerField(required=False, allow_null=True)
+    album_id = serializers.IntegerField(required=False, allow_null=True)
+    section_id = serializers.IntegerField(required=False, allow_null=True)
+    paragraph_id = serializers.IntegerField(required=False, allow_null=True)
+    scope = serializers.ChoiceField(
+        choices=InterviewEntityLink.Scope.choices, default=InterviewEntityLink.Scope.PARAGRAPH
+    )
+    review_status = serializers.ChoiceField(
+        choices=InterviewEntityLink.ReviewStatus.choices,
+        default=InterviewEntityLink.ReviewStatus.SUGGESTED,
+    )
+    excerpt_type = serializers.ChoiceField(
+        choices=InterviewEntityLink.ExcerptType.choices,
+        default=InterviewEntityLink.ExcerptType.PARAGRAPH,
+    )
+
+    def _interview(self, attrs):
         try:
-            instance.full_clean()
-        except DjangoValidationError as exc:
-            raise serializers.ValidationError(exc.message_dict) from exc
-        instance.save()
-        return instance
+            return Interview.objects.get(slug=attrs["interview_slug"])
+        except Interview.DoesNotExist as exc:
+            raise serializers.ValidationError({"interview_slug": "Interview not found."}) from exc
+
+    def create(self, validated_data):
+        instance = InterviewEntityLink(
+            interview=validated_data["_interview"],
+            song=validated_data["_song"],
+            album=validated_data["_album"],
+            section=validated_data["_section"],
+            paragraph=validated_data["_paragraph"],
+            question_paragraph=validated_data["_question"],
+            answer_paragraph=validated_data["_answer"],
+            scope=validated_data.get("scope", InterviewEntityLink.Scope.PARAGRAPH),
+            review_status=validated_data.get(
+                "review_status", InterviewEntityLink.ReviewStatus.SUGGESTED
+            ),
+            excerpt_type=validated_data.get(
+                "excerpt_type", InterviewEntityLink.ExcerptType.PARAGRAPH
+            ),
+            evidence=validated_data.get("evidence", ""),
+            start_offset=validated_data.get("start_offset"),
+            end_offset=validated_data.get("end_offset"),
+            method=InterviewEntityLink.Method.MANUAL,
+        )
+        return self._save_mention(instance)
+
+
+class EditorialReviewUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=InterviewMentionReview.Status.choices)
 
 
 class PublicationVisibilitySerializer(serializers.Serializer):

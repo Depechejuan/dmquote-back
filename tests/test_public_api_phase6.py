@@ -187,8 +187,8 @@ def test_public_mentions_include_citation_and_hide_suggestions_and_private_text(
         method=InterviewEntityLink.Method.RULES,
         confidence=1,
         review_status=InterviewEntityLink.ReviewStatus.VERIFIED,
-        start_offset=14,
-        end_offset=22,
+        start_offset=13,
+        end_offset=21,
         evidence=public_paragraph.text,
         paragraph_content_hash=hash_text(public_paragraph.text),
     )
@@ -232,6 +232,12 @@ def test_public_mentions_include_citation_and_hide_suggestions_and_private_text(
         }
         assert mention["paragraph_id"] == public_paragraph.id
         assert mention["paragraph_order"] == 1
+        assert mention["excerpt"] == {
+            "paragraph_id": public_paragraph.id,
+            "start_offset": 13,
+            "end_offset": 21,
+            "text": "New Life",
+        }
         assert mention["evidence"] == public_paragraph.text
         assert mention["source"]["url"] == interview.source_url
         assert mention["review_status"] == "verified"

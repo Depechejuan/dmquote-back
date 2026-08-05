@@ -11,6 +11,15 @@ from apps.transcripts.serializers import (
 from .models import InterviewEntityLink
 
 
+class CitationExcerptSerializer(serializers.Serializer):
+    """The exact public text selected for a paragraph citation."""
+
+    paragraph_id = serializers.IntegerField()
+    start_offset = serializers.IntegerField()
+    end_offset = serializers.IntegerField()
+    text = serializers.CharField()
+
+
 class InterviewEntityLinkSerializer(serializers.ModelSerializer):
     interview = InterviewListSerializer(read_only=True)
     song = SongSummarySerializer(read_only=True, allow_null=True)
@@ -21,6 +30,7 @@ class InterviewEntityLinkSerializer(serializers.ModelSerializer):
     paragraph_id = serializers.IntegerField(read_only=True, allow_null=True)
     paragraph_order = serializers.SerializerMethodField()
     source = SourceAttributionSerializer(source="interview", read_only=True)
+    excerpt = serializers.SerializerMethodField()
 
     class Meta:
         model = InterviewEntityLink
@@ -40,6 +50,7 @@ class InterviewEntityLinkSerializer(serializers.ModelSerializer):
             "review_status",
             "start_offset",
             "end_offset",
+            "excerpt",
             "evidence",
             "excerpt_type",
             "source",
@@ -63,3 +74,24 @@ class InterviewEntityLinkSerializer(serializers.ModelSerializer):
     @extend_schema_field(TranscriptParagraphSerializer(allow_null=True))
     def get_answer(self, obj):
         return self._public_paragraph(obj.answer_paragraph)
+
+    @extend_schema_field(CitationExcerptSerializer(allow_null=True))
+    def get_excerpt(self, obj):
+        """Never expose a paragraph unless its selected range is public and valid."""
+
+        paragraph = obj.paragraph
+        if (
+            paragraph is None
+            or paragraph.publication_status != "authorized_text"
+            or obj.start_offset is None
+            or obj.end_offset is None
+            or obj.end_offset <= obj.start_offset
+            or obj.end_offset > len(paragraph.text)
+        ):
+            return None
+        return {
+            "paragraph_id": paragraph.pk,
+            "start_offset": obj.start_offset,
+            "end_offset": obj.end_offset,
+            "text": paragraph.text[obj.start_offset : obj.end_offset],
+        }

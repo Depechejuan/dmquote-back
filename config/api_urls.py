@@ -6,7 +6,10 @@ from apps.editorial.views import (
     editorial_catalog,
     editorial_csrf,
     editorial_interview_detail,
+    editorial_interview_review_detail,
+    editorial_interview_reviews,
     editorial_interview_visibility,
+    editorial_mention_collection,
     editorial_mention_detail,
     editorial_paragraph_visibility,
     editorial_queue,
@@ -22,6 +25,11 @@ router.register("albums", AlbumViewSet, basename="album")
 urlpatterns = [
     path("editorial/csrf/", editorial_csrf, name="editorial-csrf"),
     path("editorial/queue/", editorial_queue, name="editorial-queue"),
+    path(
+        "editorial/interview-reviews/",
+        editorial_interview_reviews,
+        name="editorial-interview-reviews",
+    ),
     path("editorial/catalog/", editorial_catalog, name="editorial-catalog"),
     path(
         "editorial/interviews/<slug:slug>/",
@@ -33,6 +41,12 @@ urlpatterns = [
         editorial_interview_visibility,
         name="editorial-interview-visibility",
     ),
+    path(
+        "editorial/interviews/<slug:slug>/mention-review/",
+        editorial_interview_review_detail,
+        name="editorial-interview-review-detail",
+    ),
+    path("editorial/mentions/", editorial_mention_collection, name="editorial-mention-collection"),
     path("editorial/mentions/<int:pk>/", editorial_mention_detail, name="editorial-mention-detail"),
     path(
         "editorial/sections/<int:pk>/visibility/",

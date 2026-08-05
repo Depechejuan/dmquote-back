@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from apps.catalog.models import Album, Song
-from apps.interviews.models import Interview
+from apps.interviews.models import Interview, InterviewMentionReview
 from apps.mentions.models import InterviewEntityLink
 from apps.mentions.scanner import hash_text
 from apps.transcripts.models import Transcript, TranscriptParagraph, TranscriptSection
@@ -181,3 +181,102 @@ def test_editorial_visibility_changes_interview_and_transcript(staff_api_client)
     assert interview.publication_status == Interview.PublicationStatus.AUTHORIZED_TEXT
     assert transcript.publication_status == Interview.PublicationStatus.AUTHORIZED_TEXT
     assert section.publication_status == Interview.PublicationStatus.AUTHORIZED_TEXT
+
+
+@pytest.mark.django_db
+def test_interview_review_queue_tracks_every_interview_and_manual_verified_links(staff_api_client):
+    album = Album.objects.create(title="Some Great Reward", slug="some-great-reward-review")
+    song = Song.objects.create(title="People Are People", slug="people-are-people-review", album=album)
+    interview, _, section, _, answer = make_editorial_interview(page_id=902)
+
+    queue = staff_api_client.get("/api/v1/editorial/interview-reviews/")
+    assert queue.status_code == 200
+    assert queue.json()["count"] == 1
+    assert queue.json()["results"][0]["review"]["status"] == "pending"
+    assert queue.json()["results"][0]["candidate_count"] == 0
+    assert queue.json()["progress"] == {
+        "total": 1,
+        "pending": 1,
+        "in_review": 0,
+        "reviewed_with_links": 0,
+        "reviewed_without_song": 0,
+    }
+
+    close_without_link = staff_api_client.patch(
+        f"/api/v1/editorial/interviews/{interview.slug}/mention-review/",
+        {"status": "reviewed_with_links"},
+        format="json",
+    )
+    assert close_without_link.status_code == 400
+
+    created = staff_api_client.post(
+        "/api/v1/editorial/mentions/",
+        {
+            "interview_slug": interview.slug,
+            "song_id": song.pk,
+            "album_id": None,
+            "section_id": section.pk,
+            "paragraph_id": answer.pk,
+            "scope": "paragraph",
+            "review_status": "verified",
+            "excerpt_type": "paragraph",
+            "evidence": "New Life",
+            "start_offset": 3,
+            "end_offset": 11,
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.content
+    assert created.json()["method"] == "manual"
+    assert created.json()["paragraph_content_hash"] == hash_text(answer.text)
+
+    invalid_without_song = staff_api_client.patch(
+        f"/api/v1/editorial/interviews/{interview.slug}/mention-review/",
+        {"status": "reviewed_without_song"},
+        format="json",
+    )
+    assert invalid_without_song.status_code == 400
+
+    closed = staff_api_client.patch(
+        f"/api/v1/editorial/interviews/{interview.slug}/mention-review/",
+        {"status": "reviewed_with_links"},
+        format="json",
+    )
+    assert closed.status_code == 200
+    assert closed.json()["status"] == InterviewMentionReview.Status.REVIEWED_WITH_LINKS
+    assert closed.json()["reviewer"] == "editorial-staff"
+    assert closed.json()["reviewed_at"] is not None
+
+    review = InterviewMentionReview.objects.get(interview=interview)
+    assert review.status == InterviewMentionReview.Status.REVIEWED_WITH_LINKS
+
+
+@pytest.mark.django_db
+def test_editorial_manual_citation_rejects_empty_or_out_of_bounds_ranges(staff_api_client):
+    album = Album.objects.create(title="Ultra", slug="ultra-review-ranges")
+    song = Song.objects.create(title="Home", slug="home-review-ranges", album=album)
+    interview, _, section, _, answer = make_editorial_interview(page_id=903)
+    base_payload = {
+        "interview_slug": interview.slug,
+        "song_id": song.pk,
+        "album_id": None,
+        "section_id": section.pk,
+        "paragraph_id": answer.pk,
+        "scope": "paragraph",
+        "review_status": "suggested",
+        "excerpt_type": "paragraph",
+    }
+
+    empty_range = staff_api_client.post(
+        "/api/v1/editorial/mentions/",
+        {**base_payload, "start_offset": 3, "end_offset": 3},
+        format="json",
+    )
+    assert empty_range.status_code == 400
+
+    outside_paragraph = staff_api_client.post(
+        "/api/v1/editorial/mentions/",
+        {**base_payload, "start_offset": 0, "end_offset": len(answer.text) + 1},
+        format="json",
+    )
+    assert outside_paragraph.status_code == 400

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
@@ -145,6 +146,37 @@ class Interview(models.Model):
             self.date_year and self.date_month and self.date_day
         ):
             raise ValidationError("Day precision requires year, month and day.")
+
+
+class InterviewMentionReview(models.Model):
+    """Editorial completion state for a single interview's music-link review."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_REVIEW = "in_review", "In review"
+        REVIEWED_WITH_LINKS = "reviewed_with_links", "Reviewed with links"
+        REVIEWED_WITHOUT_SONG = "reviewed_without_song", "Reviewed without song"
+
+    interview = models.OneToOneField(
+        Interview, on_delete=models.CASCADE, related_name="mention_review"
+    )
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.PENDING)
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="interview_mention_reviews",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status"], name="interview_mention_review_idx")]
+
+    def __str__(self) -> str:
+        return f"{self.interview} — {self.get_status_display()}"
 
 
 class InterviewParticipant(models.Model):

@@ -149,8 +149,15 @@ class InterviewEntityLink(models.Model):
             raise ValidationError("Only Q/A excerpts can reference question and answer paragraphs.")
         if (self.start_offset is None) != (self.end_offset is None):
             raise ValidationError("Start and end offsets must be provided together.")
-        if self.start_offset is not None and self.end_offset < self.start_offset:
-            raise ValidationError("End offset must not precede start offset.")
+        if self.start_offset is not None:
+            if self.end_offset < self.start_offset:
+                raise ValidationError("End offset must not precede start offset.")
+            if self.end_offset == self.start_offset:
+                raise ValidationError("Offsets must define a non-empty range.")
+            if not self.paragraph_id:
+                raise ValidationError("Offsets require a paragraph citation.")
+            if self.end_offset > len(self.paragraph.text):
+                raise ValidationError("Offsets must point inside the selected paragraph.")
 
     def __str__(self) -> str:
         target = self.song or self.album

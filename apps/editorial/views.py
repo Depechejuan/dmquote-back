@@ -1,5 +1,6 @@
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -9,16 +10,20 @@ from rest_framework.response import Response
 
 from apps.catalog.models import Album, Song
 from apps.interviews.editorial import set_interview_publication_status
-from apps.interviews.models import Interview
+from apps.interviews.models import Interview, InterviewMentionReview
 from apps.mentions.models import InterviewEntityLink
 from apps.transcripts.models import TranscriptSection
 
 from .serializers import (
     CSRFSerializer,
     EditorialCatalogSerializer,
+    EditorialInterviewQueueSerializer,
     EditorialInterviewSerializer,
+    EditorialMentionCreateSerializer,
     EditorialMentionSerializer,
     EditorialMentionUpdateSerializer,
+    EditorialReviewStateSerializer,
+    EditorialReviewUpdateSerializer,
     PublicationVisibilitySerializer,
 )
 
@@ -42,6 +47,53 @@ def editorial_queryset():
     )
 
 
+def editorial_interview_review_queryset():
+    return (
+        Interview.objects.filter(source_present=True)
+        .exclude(classification_status=Interview.ClassificationStatus.NOT_INTERVIEW)
+        .select_related("mention_review")
+        .prefetch_related("participant_links__person")
+        .annotate(
+            candidate_count=Count(
+                "entity_links",
+                filter=Q(
+                    entity_links__review_status__in=[
+                        InterviewEntityLink.ReviewStatus.SUGGESTED,
+                        InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+                    ]
+                ),
+                distinct=True,
+            ),
+            verified_count=Count(
+                "entity_links",
+                filter=Q(entity_links__review_status=InterviewEntityLink.ReviewStatus.VERIFIED),
+                distinct=True,
+            ),
+        )
+        .order_by("-date_year", "-date_month", "-date_day", "title")
+    )
+
+
+def editorial_review_progress():
+    eligible = Interview.objects.filter(source_present=True).exclude(
+        classification_status=Interview.ClassificationStatus.NOT_INTERVIEW
+    )
+    total = eligible.count()
+    progress = {status: 0 for status, _ in InterviewMentionReview.Status.choices}
+    for row in (
+        InterviewMentionReview.objects.filter(interview__in=eligible)
+        .values("status")
+        .annotate(count=Count("id"))
+    ):
+        progress[row["status"]] = row["count"]
+    progress[InterviewMentionReview.Status.PENDING] = total - sum(
+        count
+        for status, count in progress.items()
+        if status != InterviewMentionReview.Status.PENDING
+    )
+    return {"total": total, **progress}
+
+
 @extend_schema(
     parameters=[
         OpenApiParameter(
@@ -51,6 +103,7 @@ def editorial_queryset():
             description="Comma-separated statuses. Defaults to suggested and needs_review.",
         ),
         OpenApiParameter(name="search", type=str, required=False),
+        OpenApiParameter(name="interview_slug", type=str, required=False),
     ],
     responses={200: EditorialMentionSerializer(many=True), 403: OpenApiResponse(description="Staff access required.")},
 )
@@ -74,11 +127,66 @@ def editorial_queue(request):
             | Q(album__title__icontains=search)
             | Q(evidence__icontains=search)
         )
+    interview_slug = request.query_params.get("interview_slug", "").strip()
+    if interview_slug:
+        queryset = queryset.filter(interview__slug=interview_slug)
     paginator = PageNumberPagination()
     paginator.page_size = 20
     page = paginator.paginate_queryset(queryset, request)
     serializer = EditorialMentionSerializer(page, many=True, context={"request": request})
     return paginator.get_paginated_response(serializer.data)
+
+
+@extend_schema(
+    parameters=[
+        OpenApiParameter(
+            name="status",
+            type=str,
+            required=False,
+            description="One review status. Defaults to pending; use all for every interview.",
+        ),
+        OpenApiParameter(name="search", type=str, required=False),
+    ],
+    responses={
+        200: EditorialInterviewQueueSerializer(many=True),
+        403: OpenApiResponse(description="Staff access required."),
+    },
+)
+@api_view(["GET"])
+@authentication_classes(EDITORIAL_AUTHENTICATION)
+@permission_classes(EDITORIAL_PERMISSIONS)
+def editorial_interview_reviews(request):
+    status = request.query_params.get("status", InterviewMentionReview.Status.PENDING)
+    valid_statuses = {choice for choice, _ in InterviewMentionReview.Status.choices}
+    if status != "all" and status not in valid_statuses:
+        return Response({"detail": "Invalid review status."}, status=400)
+
+    queryset = editorial_interview_review_queryset()
+    if status == InterviewMentionReview.Status.PENDING:
+        queryset = queryset.filter(
+            Q(mention_review__isnull=True)
+            | Q(mention_review__status=InterviewMentionReview.Status.PENDING)
+        )
+    elif status != "all":
+        queryset = queryset.filter(mention_review__status=status)
+
+    search = request.query_params.get("search", "").strip()
+    if search:
+        queryset = queryset.filter(
+            Q(title__icontains=search)
+            | Q(outlet__icontains=search)
+            | Q(location__icontains=search)
+            | Q(participant_links__person__name__icontains=search)
+        ).distinct()
+
+    paginator = PageNumberPagination()
+    paginator.page_size = 20
+    paginator.max_page_size = 100
+    page = paginator.paginate_queryset(queryset, request)
+    serializer = EditorialInterviewQueueSerializer(page, many=True, context={"request": request})
+    response = paginator.get_paginated_response(serializer.data)
+    response.data["progress"] = editorial_review_progress()
+    return response
 
 
 @extend_schema(responses=CSRFSerializer)
@@ -119,13 +227,31 @@ def editorial_catalog(request):
 def editorial_interview_detail(request, slug):
     section_queryset = TranscriptSection.objects.prefetch_related("paragraphs").order_by("order")
     interview = get_object_or_404(
-        Interview.objects.prefetch_related(
+        Interview.objects.select_related("mention_review").prefetch_related(
             "participant_links__person",
             Prefetch("transcript__sections", queryset=section_queryset),
         ),
         slug=slug,
     )
     return Response(EditorialInterviewSerializer(interview, context={"request": request}).data)
+
+
+@extend_schema(
+    request=EditorialMentionCreateSerializer,
+    responses={201: EditorialMentionSerializer, 400: OpenApiResponse(description="Invalid editorial mention.")},
+)
+@api_view(["POST"])
+@authentication_classes(EDITORIAL_AUTHENTICATION)
+@permission_classes(EDITORIAL_PERMISSIONS)
+def editorial_mention_collection(request):
+    serializer = EditorialMentionCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    mention = serializer.save()
+    mention = editorial_queryset().get(pk=mention.pk)
+    return Response(
+        EditorialMentionSerializer(mention, context={"request": request}).data,
+        status=201,
+    )
 
 
 @extend_schema(
@@ -144,6 +270,44 @@ def editorial_mention_detail(request, pk):
     mention = serializer.save()
     mention = editorial_queryset().get(pk=mention.pk)
     return Response(EditorialMentionSerializer(mention, context={"request": request}).data)
+
+
+@extend_schema(
+    request=EditorialReviewUpdateSerializer,
+    responses={200: EditorialReviewStateSerializer, 400: OpenApiResponse(description="Invalid review transition.")},
+)
+@api_view(["PATCH"])
+@authentication_classes(EDITORIAL_AUTHENTICATION)
+@permission_classes(EDITORIAL_PERMISSIONS)
+def editorial_interview_review_detail(request, slug):
+    interview = get_object_or_404(Interview, slug=slug)
+    serializer = EditorialReviewUpdateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    status = serializer.validated_data["status"]
+    has_verified_links = interview.entity_links.filter(
+        review_status=InterviewEntityLink.ReviewStatus.VERIFIED
+    ).exists()
+    if status == InterviewMentionReview.Status.REVIEWED_WITH_LINKS and not has_verified_links:
+        return Response(
+            {"detail": "A verified song or album link is required before closing with links."},
+            status=400,
+        )
+    if status == InterviewMentionReview.Status.REVIEWED_WITHOUT_SONG and has_verified_links:
+        return Response(
+            {"detail": "An interview with verified links cannot be closed without a song."},
+            status=400,
+        )
+
+    review, _ = InterviewMentionReview.objects.get_or_create(interview=interview)
+    review.status = status
+    if status in {
+        InterviewMentionReview.Status.REVIEWED_WITH_LINKS,
+        InterviewMentionReview.Status.REVIEWED_WITHOUT_SONG,
+    }:
+        review.reviewer = request.user
+        review.reviewed_at = timezone.now()
+    review.save()
+    return Response(EditorialReviewStateSerializer(review, context={"request": request}).data)
 
 
 def _visibility_response(serializer, instance):

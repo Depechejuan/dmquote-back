@@ -65,6 +65,8 @@ class SongViewSet(ReadOnlyModelViewSet):
                 "album",
                 "paragraph",
                 "section",
+                "question_paragraph",
+                "answer_paragraph",
             )
             .prefetch_related("interview__participant_links__person")
             .all()
@@ -105,6 +107,8 @@ class AlbumViewSet(ReadOnlyModelViewSet):
                 "album",
                 "paragraph",
                 "section",
+                "question_paragraph",
+                "answer_paragraph",
             )
             .prefetch_related("interview__participant_links__person")
             .all()
