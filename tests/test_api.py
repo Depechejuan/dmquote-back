@@ -71,6 +71,11 @@ def test_production_frontend_origin_is_allowed_for_api_requests():
     assert response["Access-Control-Allow-Origin"] == "https://dmquote.netlify.app"
 
 
+def test_local_frontend_origin_is_trusted_for_csrf_protected_editorial_requests():
+    assert "http://localhost:5173" in settings.CORS_ALLOWED_ORIGINS
+    assert "http://localhost:5173" in settings.CSRF_TRUSTED_ORIGINS
+
+
 @pytest.mark.django_db
 @override_settings(
     STORAGES={
