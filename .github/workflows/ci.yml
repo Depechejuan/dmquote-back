@@ -36,5 +36,7 @@ jobs:
         run: ruff check .
       - name: Django checks
         run: python manage.py check
+      - name: Collect static files
+        run: python manage.py collectstatic --noinput
       - name: Tests
         run: pytest
