@@ -12,7 +12,8 @@ from apps.catalog.models import Album, Song
 from apps.interviews.editorial import set_interview_publication_status
 from apps.interviews.models import Interview, InterviewMentionReview
 from apps.mentions.models import InterviewEntityLink
-from apps.transcripts.models import TranscriptSection
+from apps.transcripts.models import Transcript, TranscriptSection, TranscriptTranslationRequest
+from apps.transcripts.translations import invalidate_transcript_translations
 
 from .serializers import (
     CSRFSerializer,
@@ -24,6 +25,9 @@ from .serializers import (
     EditorialMentionUpdateSerializer,
     EditorialReviewStateSerializer,
     EditorialReviewUpdateSerializer,
+    EditorialTranscriptLanguageSerializer,
+    EditorialTranscriptSerializer,
+    EditorialTranslationRequestSerializer,
     PublicationVisibilitySerializer,
 )
 
@@ -286,10 +290,62 @@ def editorial_interview_detail(request, slug):
         Interview.objects.select_related("mention_review").prefetch_related(
             "participant_links__person",
             Prefetch("transcript__sections", queryset=section_queryset),
+            "transcript__translation_requests",
         ),
         slug=slug,
     )
     return Response(EditorialInterviewSerializer(interview, context={"request": request}).data)
+
+
+@extend_schema(
+    parameters=[
+        OpenApiParameter(
+            name="status",
+            type=str,
+            required=False,
+            description="queued, processing, completed, failed, or all. Defaults to queued.",
+        ),
+    ],
+    responses={200: EditorialTranslationRequestSerializer(many=True)},
+)
+@api_view(["GET"])
+@authentication_classes(EDITORIAL_AUTHENTICATION)
+@permission_classes(EDITORIAL_PERMISSIONS)
+def editorial_translation_requests(request):
+    status = request.query_params.get("status", TranscriptTranslationRequest.Status.QUEUED)
+    valid_statuses = {choice for choice, _ in TranscriptTranslationRequest.Status.choices}
+    if status != "all" and status not in valid_statuses:
+        return Response({"detail": "Invalid translation request status."}, status=400)
+    queryset = TranscriptTranslationRequest.objects.select_related(
+        "transcript__interview"
+    ).order_by("requested_at", "id")
+    if status != "all":
+        queryset = queryset.filter(status=status)
+    paginator = PageNumberPagination()
+    paginator.page_size = 20
+    page = paginator.paginate_queryset(queryset, request)
+    return paginator.get_paginated_response(
+        EditorialTranslationRequestSerializer(page, many=True, context={"request": request}).data
+    )
+
+
+@extend_schema(
+    request=EditorialTranscriptLanguageSerializer,
+    responses={200: EditorialTranscriptSerializer, 404: OpenApiResponse(description="Transcript not found.")},
+)
+@api_view(["PATCH"])
+@authentication_classes(EDITORIAL_AUTHENTICATION)
+@permission_classes(EDITORIAL_PERMISSIONS)
+def editorial_transcript_language(request, slug):
+    interview = get_object_or_404(Interview, slug=slug)
+    transcript = get_object_or_404(Transcript, interview=interview)
+    serializer = EditorialTranscriptLanguageSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    if transcript.language != serializer.validated_data["language"]:
+        transcript.language = serializer.validated_data["language"]
+        transcript.save(update_fields=["language", "updated_at"])
+        invalidate_transcript_translations(transcript)
+    return Response(EditorialTranscriptSerializer(transcript, context={"request": request}).data)
 
 
 @extend_schema(

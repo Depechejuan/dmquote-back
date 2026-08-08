@@ -14,6 +14,8 @@ from apps.editorial.views import (
     editorial_paragraph_visibility,
     editorial_queue,
     editorial_section_visibility,
+    editorial_transcript_language,
+    editorial_translation_requests,
 )
 from apps.interviews.views import InterviewViewSet
 
@@ -32,6 +34,11 @@ urlpatterns = [
     ),
     path("editorial/catalog/", editorial_catalog, name="editorial-catalog"),
     path(
+        "editorial/translation-requests/",
+        editorial_translation_requests,
+        name="editorial-translation-requests",
+    ),
+    path(
         "editorial/interviews/<slug:slug>/",
         editorial_interview_detail,
         name="editorial-interview-detail",
@@ -45,6 +52,11 @@ urlpatterns = [
         "editorial/interviews/<slug:slug>/mention-review/",
         editorial_interview_review_detail,
         name="editorial-interview-review-detail",
+    ),
+    path(
+        "editorial/interviews/<slug:slug>/transcript-language/",
+        editorial_transcript_language,
+        name="editorial-transcript-language",
     ),
     path("editorial/mentions/", editorial_mention_collection, name="editorial-mention-collection"),
     path("editorial/mentions/<int:pk>/", editorial_mention_detail, name="editorial-mention-detail"),

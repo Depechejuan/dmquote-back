@@ -18,7 +18,12 @@ from apps.interviews.serializers import (
     SourceAttributionSerializer,
 )
 from apps.mentions.models import InterviewEntityLink
-from apps.transcripts.models import TranscriptParagraph, TranscriptSection
+from apps.transcripts.models import (
+    TranscriptParagraph,
+    TranscriptSection,
+    TranscriptTranslationRequest,
+    validate_language_code,
+)
 
 
 class EditorialParagraphSerializer(serializers.ModelSerializer):
@@ -69,6 +74,26 @@ class EditorialSectionCitationSerializer(serializers.ModelSerializer):
         ]
 
 
+class EditorialTranslationRequestSerializer(serializers.ModelSerializer):
+    language = serializers.CharField(source="target_language")
+    source_language = serializers.CharField(source="transcript.language")
+    interview_slug = serializers.SlugField(source="transcript.interview.slug")
+    interview_title = serializers.CharField(source="transcript.interview.title")
+
+    class Meta:
+        model = TranscriptTranslationRequest
+        fields = [
+            "id",
+            "language",
+            "source_language",
+            "status",
+            "requested_at",
+            "completed_at",
+            "interview_slug",
+            "interview_title",
+        ]
+
+
 class EditorialTranscriptSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     language = serializers.CharField()
@@ -76,6 +101,15 @@ class EditorialTranscriptSerializer(serializers.Serializer):
     publication_status = serializers.CharField()
     notes = serializers.CharField()
     sections = EditorialSectionSerializer(many=True)
+    translation_requests = serializers.SerializerMethodField()
+
+    @extend_schema_field(EditorialTranslationRequestSerializer(many=True))
+    def get_translation_requests(self, obj):
+        return EditorialTranslationRequestSerializer(
+            obj.translation_requests.all(),
+            many=True,
+            context=self.context,
+        ).data
 
 
 class EditorialReviewStateSerializer(serializers.Serializer):
@@ -459,6 +493,13 @@ class PublicationVisibilitySerializer(serializers.Serializer):
 
 class CSRFSerializer(serializers.Serializer):
     csrf_token = serializers.CharField()
+
+
+class EditorialTranscriptLanguageSerializer(serializers.Serializer):
+    language = serializers.CharField(max_length=12, validators=[validate_language_code])
+
+    def validate_language(self, value):
+        return value.strip().lower().replace("_", "-")
 
 
 class EditorialCatalogSerializer(serializers.Serializer):

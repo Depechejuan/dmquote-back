@@ -15,6 +15,7 @@ from apps.ingestion.parsers.dmlive import ParsedPage, parse_source_file
 from apps.interviews.models import ImportRun, Interview, InterviewParticipant, SourceSnapshot
 from apps.mentions.models import InterviewEntityLink
 from apps.transcripts.models import Transcript, TranscriptParagraph, TranscriptSection
+from apps.transcripts.translations import invalidate_transcript_translations
 
 DATE_RE = re.compile(r"^(?P<year>\d{4})-(?P<month>\d{2}|xx)-(?P<day>\d{2}|xx|\dx)\s+(?P<body>.+)$", re.I)
 KNOWN_PARTICIPANTS = {
@@ -455,6 +456,10 @@ class DMLiveImporter:
         rewrite_transcript_ids = [
             transcript_by_interview[state["interview"].pk].pk for state in rewrite_states
         ]
+        for transcript in (
+            transcript_by_interview[state["interview"].pk] for state in rewrite_states
+        ):
+            invalidate_transcript_translations(transcript)
         TranscriptSection.objects.filter(transcript_id__in=rewrite_transcript_ids).delete()
         section_rows = []
         section_state_pairs = []
@@ -712,6 +717,7 @@ class DMLiveImporter:
             ).update(review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW)
             return
 
+        invalidate_transcript_translations(transcript)
         transcript.sections.all().delete()
         section_rows = [
             TranscriptSection(

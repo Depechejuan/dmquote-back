@@ -100,6 +100,21 @@ catalogue for manual review; it does not delete them automatically.
 The backend is available at `http://localhost:8000`, Admin at
 `http://localhost:8000/dmlog/`, and the frontend at `http://localhost:5173`.
 
+## Translation requests
+
+Visitors can request an unavailable English or Spanish transcript translation.
+The request is queued and does not call DeepL from the browser. Set the backend-only
+`DEEPL_AUTH_KEY` for a DeepL API Free account, then inspect and process queued work:
+
+```bash
+python manage.py process_translation_requests --dry-run
+python manage.py process_translation_requests
+```
+
+The command reads the provider's remaining quota and the configured
+`DEEPL_MAX_MONTHLY_CHARACTERS` cap (500,000 by default). It never partially
+publishes an interview: a request that does not fit remains queued for a later run.
+
 ## Vercel deployment
 
 The backend is prepared as a Vercel Python Function through `api/index.py` and
@@ -117,6 +132,9 @@ DJANGO_CSRF_TRUSTED_ORIGINS=https://dmquote-back.vercel.app
 DATABASE_ENGINE=postgresql
 DATABASE_URL=<Neon-production-connection-string>
 DATABASE_CONN_MAX_AGE=0
+DEEPL_AUTH_KEY=<DeepL-API-Free-key>
+DEEPL_API_BASE_URL=https://api-free.deepl.com
+DEEPL_MAX_MONTHLY_CHARACTERS=500000
 ```
 
 The public backend root is `https://dmquote-back.vercel.app/` and returns

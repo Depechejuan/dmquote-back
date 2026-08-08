@@ -176,7 +176,16 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+    "DEFAULT_THROTTLE_RATES": {
+        "translation_request": "10/day",
+    },
 }
+
+# DeepL API Free is deliberately server-only.  Do not expose this key to Vite.
+DEEPL_AUTH_KEY = os.getenv("DEEPL_AUTH_KEY", "")
+DEEPL_API_BASE_URL = os.getenv("DEEPL_API_BASE_URL", "https://api-free.deepl.com")
+DEEPL_MAX_MONTHLY_CHARACTERS = int(os.getenv("DEEPL_MAX_MONTHLY_CHARACTERS", "500000"))
+DEEPL_TIMEOUT_SECONDS = float(os.getenv("DEEPL_TIMEOUT_SECONDS", "30"))
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "DMQuote API",
