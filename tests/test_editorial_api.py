@@ -280,3 +280,54 @@ def test_editorial_manual_citation_rejects_empty_or_out_of_bounds_ranges(staff_a
         format="json",
     )
     assert outside_paragraph.status_code == 400
+
+
+@pytest.mark.django_db
+def test_interview_review_queue_filters_by_year_song_and_album(staff_api_client):
+    album = Album.objects.create(title="Black Celebration", slug="black-celebration-filter")
+    other_album = Album.objects.create(title="Music for the Masses", slug="mftm-filter")
+    song = Song.objects.create(title="Stripped", slug="stripped-filter", album=album)
+    other_song = Song.objects.create(title="Never Let Me Down Again", slug="nlmda-filter", album=other_album)
+    song_interview, _, _, _, _ = make_editorial_interview(
+        page_id=904, title="1986 Song filter interview"
+    )
+    direct_album_interview, _, _, _, _ = make_editorial_interview(
+        page_id=905, title="1986 Album filter interview"
+    )
+    other_song_interview, _, _, _, _ = make_editorial_interview(
+        page_id=906, title="1987 Other song filter interview"
+    )
+    song_interview.date_year = 1986
+    song_interview.save(update_fields=["date_year", "updated_at"])
+    direct_album_interview.date_year = 1986
+    direct_album_interview.save(update_fields=["date_year", "updated_at"])
+    other_song_interview.date_year = 1987
+    other_song_interview.save(update_fields=["date_year", "updated_at"])
+    InterviewEntityLink.objects.create(interview=song_interview, song=song)
+    InterviewEntityLink.objects.create(interview=direct_album_interview, album=album)
+    InterviewEntityLink.objects.create(interview=other_song_interview, song=other_song)
+
+    base_url = "/api/v1/editorial/interview-reviews/?status=all"
+    by_year = staff_api_client.get(f"{base_url}&date_year=1986")
+    assert {item["id"] for item in by_year.json()["results"]} == {
+        song_interview.id,
+        direct_album_interview.id,
+    }
+
+    by_song = staff_api_client.get(f"{base_url}&mention_kind=song&mention_id={song.id}")
+    assert [item["id"] for item in by_song.json()["results"]] == [song_interview.id]
+
+    by_direct_album = staff_api_client.get(
+        f"{base_url}&mention_kind=album&mention_id={album.id}"
+    )
+    assert [item["id"] for item in by_direct_album.json()["results"]] == [
+        direct_album_interview.id
+    ]
+
+    by_song_album = staff_api_client.get(
+        f"{base_url}&mention_kind=songs_from_album&mention_id={album.id}"
+    )
+    assert [item["id"] for item in by_song_album.json()["results"]] == [song_interview.id]
+
+    invalid = staff_api_client.get(f"{base_url}&mention_kind=unknown&mention_id={album.id}")
+    assert invalid.status_code == 400

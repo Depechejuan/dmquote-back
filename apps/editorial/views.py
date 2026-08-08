@@ -94,6 +94,50 @@ def editorial_review_progress():
     return {"total": total, **progress}
 
 
+def apply_editorial_review_filters(queryset, request):
+    date_year = request.query_params.get("date_year", "").strip()
+    if date_year:
+        try:
+            queryset = queryset.filter(date_year=int(date_year))
+        except ValueError:
+            return None, Response({"detail": "date_year must be a whole number."}, status=400)
+
+    mention_kind = request.query_params.get("mention_kind", "").strip()
+    mention_id = request.query_params.get("mention_id", "").strip()
+    if bool(mention_kind) != bool(mention_id):
+        return None, Response(
+            {"detail": "mention_kind and mention_id must be provided together."}, status=400
+        )
+    if not mention_kind:
+        return queryset, None
+    try:
+        mention_id_value = int(mention_id)
+    except ValueError:
+        return None, Response({"detail": "mention_id must be a whole number."}, status=400)
+
+    visible_statuses = [
+        InterviewEntityLink.ReviewStatus.SUGGESTED,
+        InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+        InterviewEntityLink.ReviewStatus.VERIFIED,
+    ]
+    if mention_kind == "song":
+        return queryset.filter(
+            entity_links__song_id=mention_id_value,
+            entity_links__review_status__in=visible_statuses,
+        ), None
+    if mention_kind == "album":
+        return queryset.filter(
+            entity_links__album_id=mention_id_value,
+            entity_links__review_status__in=visible_statuses,
+        ), None
+    if mention_kind == "songs_from_album":
+        return queryset.filter(
+            entity_links__song__album_id=mention_id_value,
+            entity_links__review_status__in=visible_statuses,
+        ), None
+    return None, Response({"detail": "Invalid mention_kind."}, status=400)
+
+
 @extend_schema(
     parameters=[
         OpenApiParameter(
@@ -146,6 +190,14 @@ def editorial_queue(request):
             description="One review status. Defaults to pending; use all for every interview.",
         ),
         OpenApiParameter(name="search", type=str, required=False),
+        OpenApiParameter(name="date_year", type=int, required=False),
+        OpenApiParameter(
+            name="mention_kind",
+            type=str,
+            required=False,
+            description="song, album, or songs_from_album.",
+        ),
+        OpenApiParameter(name="mention_id", type=int, required=False),
     ],
     responses={
         200: EditorialInterviewQueueSerializer(many=True),
@@ -169,6 +221,10 @@ def editorial_interview_reviews(request):
         )
     elif status != "all":
         queryset = queryset.filter(mention_review__status=status)
+
+    queryset, filter_error = apply_editorial_review_filters(queryset, request)
+    if filter_error:
+        return filter_error
 
     search = request.query_params.get("search", "").strip()
     if search:
