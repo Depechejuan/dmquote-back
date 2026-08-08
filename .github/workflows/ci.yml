@@ -24,11 +24,7 @@ jobs:
       DJANGO_SETTINGS_MODULE: config.settings.development
       DJANGO_SECRET_KEY: ci-only-secret
       DJANGO_DEBUG: true
-      DATABASE_NAME: dmquote
-      DATABASE_USER: dmquote
-      DATABASE_PASSWORD: dmquote
-      DATABASE_HOST: localhost
-      DATABASE_PORT: 5432
+      DATABASE_URL: postgresql://dmquote:dmquote@localhost:5432/dmquote
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
