@@ -122,12 +122,37 @@ class EditorialReviewStateSerializer(serializers.Serializer):
         return obj.reviewer.get_username() if obj.reviewer_id else None
 
 
+class EditorialMentionSchemaSerializer(serializers.ModelSerializer):
+    """Schema shape for the all-matches field on an editorial interview."""
+
+    interview = InterviewListSerializer(read_only=True)
+    song = SongSummarySerializer(read_only=True, allow_null=True)
+    album = AlbumSummarySerializer(read_only=True, allow_null=True)
+    section = EditorialSectionCitationSerializer(read_only=True, allow_null=True)
+    paragraph = EditorialParagraphSerializer(read_only=True, allow_null=True)
+    question = EditorialParagraphSerializer(source="question_paragraph", read_only=True, allow_null=True)
+    answer = EditorialParagraphSerializer(source="answer_paragraph", read_only=True, allow_null=True)
+    source = SourceAttributionSerializer(source="interview", read_only=True)
+    paragraph_order = serializers.IntegerField(read_only=True, allow_null=True)
+    context = EditorialParagraphSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = InterviewEntityLink
+        fields = [
+            "id", "interview", "song", "album", "section", "paragraph", "paragraph_order",
+            "question", "answer", "scope", "method", "confidence", "review_status",
+            "excerpt_type", "start_offset", "end_offset", "evidence", "paragraph_content_hash",
+            "source", "context",
+        ]
+
+
 class EditorialInterviewSerializer(serializers.ModelSerializer):
     participants = serializers.SerializerMethodField()
     date = serializers.ReadOnlyField(source="date_display")
     source = SourceAttributionSerializer(source="*", read_only=True)
     transcript = serializers.SerializerMethodField()
     mention_review = serializers.SerializerMethodField()
+    mentions = serializers.SerializerMethodField()
 
     class Meta:
         model = Interview
@@ -154,6 +179,7 @@ class EditorialInterviewSerializer(serializers.ModelSerializer):
             "notes",
             "transcript",
             "mention_review",
+            "mentions",
         ]
 
     @extend_schema_field(InterviewParticipantSerializer(many=True))
@@ -176,6 +202,14 @@ class EditorialInterviewSerializer(serializers.ModelSerializer):
         except InterviewMentionReview.DoesNotExist:
             return {"status": InterviewMentionReview.Status.PENDING, "reviewer": None, "reviewed_at": None}
         return EditorialReviewStateSerializer(review, context=self.context).data
+
+    @extend_schema_field(EditorialMentionSchemaSerializer(many=True))
+    def get_mentions(self, obj):
+        return EditorialMentionSerializer(
+            getattr(obj, "editorial_entity_links", []),
+            many=True,
+            context=self.context,
+        ).data
 
 
 class EditorialInterviewQueueSerializer(InterviewListSerializer):

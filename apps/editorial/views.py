@@ -302,13 +302,7 @@ def editorial_interview_detail(request, slug):
         ),
         slug=slug,
     )
-    response = EditorialInterviewSerializer(interview, context={"request": request}).data
-    response["mentions"] = EditorialMentionSerializer(
-        getattr(interview, "editorial_entity_links", []),
-        many=True,
-        context={"request": request},
-    ).data
-    return Response(response)
+    return Response(EditorialInterviewSerializer(interview, context={"request": request}).data)
 
 
 @extend_schema(
