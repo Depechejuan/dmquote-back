@@ -130,7 +130,9 @@ def scan_mentions(
             explicit_links = explicit_links_for_interview(
                 current_interview, snapshot=snapshots_by_interview.get(current_interview.pk)
             )
-            candidates, skipped = find_candidates(paragraphs, targets, explicit_links)
+            candidates, skipped = find_candidates(
+                paragraphs, targets, explicit_links, interview=current_interview
+            )
         except (OSError, UnicodeError, ValueError) as exc:
             summary.interviews_failed += 1
             summary.errors.append(
@@ -221,10 +223,15 @@ def find_candidates(
     paragraphs: list[TranscriptParagraph],
     targets: list[Target],
     explicit_links: list[tuple[str, str]],
+    *,
+    interview: Interview | None = None,
 ) -> tuple[list[MentionCandidate], int]:
     candidates: dict[tuple[str, int, int, int, int], MentionCandidate] = {}
     skipped_ambiguous = 0
     target_index = build_target_index(targets)
+    candidate_interview = interview
+    if candidate_interview is None and paragraphs:
+        candidate_interview = paragraphs[0].transcript.interview
 
     for paragraph in paragraphs:
         normalized_source = normalized_text_with_offsets(paragraph.text)
@@ -238,7 +245,9 @@ def find_candidates(
                 )
             if target is None:
                 continue
-            if not target_is_available_at_interview(target, paragraph.transcript.interview):
+            if candidate_interview is not None and not target_is_available_at_interview(
+                target, candidate_interview
+            ):
                 continue
             for start, end in find_occurrences(
                 paragraph.text, linked_label, normalized_source=normalized_source
@@ -254,7 +263,9 @@ def find_candidates(
                 ):
                     skipped_ambiguous += 1
                 continue
-            if not target_is_available_at_interview(target, paragraph.transcript.interview):
+            if candidate_interview is not None and not target_is_available_at_interview(
+                target, candidate_interview
+            ):
                 continue
             if normalized_alias in AMBIGUOUS_ALIASES:
                 if find_occurrences(
