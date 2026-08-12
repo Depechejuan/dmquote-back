@@ -68,6 +68,7 @@ class ScanSummary:
     suggestions_updated: int = 0
     suggestions_existing: int = 0
     automatic_suggestions_reviewed: int = 0
+    automatic_matches_rejected: int = 0
     ambiguous_matches_skipped: int = 0
     conflicts_detected: int = 0
     qa_excerpts: int = 0
@@ -89,6 +90,9 @@ def scan_mentions(
 ) -> ScanSummary:
     summary = ScanSummary()
     summary.automatic_suggestions_reviewed = normalize_automatic_suggestions(
+        interview=interview, dry_run=dry_run
+    )
+    summary.automatic_matches_rejected = reject_unavailable_automatic_matches(
         interview=interview, dry_run=dry_run
     )
     targets = build_targets()
@@ -567,6 +571,41 @@ def normalize_automatic_suggestions(
     if count and not dry_run:
         queryset.update(review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW)
     return count
+
+
+def reject_unavailable_automatic_matches(
+    *, interview: Interview | None = None, dry_run: bool = False
+) -> int:
+    """Hide old automatic matches whose entity was released after the interview."""
+
+    queryset = InterviewEntityLink.objects.filter(
+        method__in=[InterviewEntityLink.Method.RULES, InterviewEntityLink.Method.AI],
+        review_status__in=[
+            InterviewEntityLink.ReviewStatus.SUGGESTED,
+            InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+        ],
+    ).select_related("interview", "song", "album")
+    if interview is not None:
+        queryset = queryset.filter(interview=interview)
+
+    invalid_ids = [
+        link.pk
+        for link in queryset.iterator()
+        if link.interview.date_year is not None
+        and (
+            (link.song is not None
+             and link.song.release_year is not None
+             and link.interview.date_year < link.song.release_year)
+            or (link.album is not None
+                and link.album.release_year is not None
+                and link.interview.date_year < link.album.release_year)
+        )
+    ]
+    if invalid_ids and not dry_run:
+        InterviewEntityLink.objects.filter(pk__in=invalid_ids).update(
+            review_status=InterviewEntityLink.ReviewStatus.REJECTED
+        )
+    return len(invalid_ids)
 
 
 def candidate_key(candidate: MentionCandidate) -> tuple:

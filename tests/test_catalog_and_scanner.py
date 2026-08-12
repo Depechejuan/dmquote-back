@@ -516,6 +516,30 @@ def test_scanner_skips_matches_before_song_and_album_release_years():
 
 
 @pytest.mark.django_db
+def test_scanner_rejects_existing_automatic_matches_before_release():
+    album = Album.objects.create(title="Delta Machine", slug="delta-machine", release_year=2013)
+    song = Song.objects.create(title="Always", slug="always-existing", album=album, release_year=2013)
+    interview = Interview.objects.create(
+        title="1985 Existing match",
+        slug="1985-existing-match",
+        date_year=1985,
+        source_url="https://dmlive.wiki/wiki/1985_Existing_match",
+    )
+    link = InterviewEntityLink.objects.create(
+        interview=interview,
+        song=song,
+        method=InterviewEntityLink.Method.RULES,
+        review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+    )
+
+    summary = scan_mentions()
+
+    link.refresh_from_db()
+    assert summary.automatic_matches_rejected == 1
+    assert link.review_status == InterviewEntityLink.ReviewStatus.REJECTED
+
+
+@pytest.mark.django_db
 def test_scan_report_is_written_as_json(tmp_path):
     report_path = tmp_path / "reports" / "phase5.json"
 
