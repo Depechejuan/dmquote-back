@@ -67,6 +67,7 @@ class ScanSummary:
     suggestions_created: int = 0
     suggestions_updated: int = 0
     suggestions_existing: int = 0
+    automatic_suggestions_reviewed: int = 0
     ambiguous_matches_skipped: int = 0
     conflicts_detected: int = 0
     qa_excerpts: int = 0
@@ -87,6 +88,9 @@ def scan_mentions(
     *, interview: Interview | None = None, dry_run: bool = False
 ) -> ScanSummary:
     summary = ScanSummary()
+    summary.automatic_suggestions_reviewed = normalize_automatic_suggestions(
+        interview=interview, dry_run=dry_run
+    )
     targets = build_targets()
     candidates_to_persist = []
     if interview is not None:
@@ -230,6 +234,8 @@ def find_candidates(
                 )
             if target is None:
                 continue
+            if not target_is_available_at_interview(target, paragraph.transcript.interview):
+                continue
             for start, end in find_occurrences(
                 paragraph.text, linked_label, normalized_source=normalized_source
             ):
@@ -244,6 +250,8 @@ def find_candidates(
                 ):
                     skipped_ambiguous += 1
                 continue
+            if not target_is_available_at_interview(target, paragraph.transcript.interview):
+                continue
             if normalized_alias in AMBIGUOUS_ALIASES:
                 if find_occurrences(
                     paragraph.text, normalized_alias, normalized_source=normalized_source
@@ -257,6 +265,13 @@ def find_candidates(
                 candidate = MentionCandidate(target, paragraph, start, end, "rules", confidence)
                 _keep_best(candidates, candidate)
     return list(candidates.values()), skipped_ambiguous
+
+
+def target_is_available_at_interview(target: Target, interview: Interview) -> bool:
+    release_year = getattr(target.entity, "release_year", None)
+    if interview.date_year is None or release_year is None:
+        return True
+    return interview.date_year >= release_year
 
 
 QUESTION_SPEAKER_RE = re.compile(
@@ -302,7 +317,7 @@ class ExcerptMatch:
     excerpt_type: str
     question_paragraph: TranscriptParagraph | None = None
     answer_paragraph: TranscriptParagraph | None = None
-    review_status: str = InterviewEntityLink.ReviewStatus.SUGGESTED
+    review_status: str = InterviewEntityLink.ReviewStatus.NEEDS_REVIEW
 
 
 def build_excerpt_map(paragraphs: list[TranscriptParagraph]) -> dict[int, ExcerptMatch]:
@@ -346,7 +361,10 @@ def find_excerpt_match(
             review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
         )
 
-    return ExcerptMatch(InterviewEntityLink.ExcerptType.PARAGRAPH)
+    return ExcerptMatch(
+        InterviewEntityLink.ExcerptType.PARAGRAPH,
+        review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+    )
 
 
 def is_question_paragraph(paragraph: TranscriptParagraph) -> bool:
@@ -534,6 +552,21 @@ def persist_candidates(candidates: list[MentionCandidate]) -> tuple[int, int, in
         ],
     )
     return created, updated, existing
+
+
+def normalize_automatic_suggestions(
+    *, interview: Interview | None = None, dry_run: bool = False
+) -> int:
+    queryset = InterviewEntityLink.objects.filter(
+        method__in=[InterviewEntityLink.Method.RULES, InterviewEntityLink.Method.AI],
+        review_status=InterviewEntityLink.ReviewStatus.SUGGESTED,
+    )
+    if interview is not None:
+        queryset = queryset.filter(interview=interview)
+    count = queryset.count()
+    if count and not dry_run:
+        queryset.update(review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW)
+    return count
 
 
 def candidate_key(candidate: MentionCandidate) -> tuple:

@@ -13,7 +13,10 @@ def public_mentions(
     base = queryset if queryset is not None else InterviewEntityLink.objects.all()
     return (
         base.filter(
-            review_status=InterviewEntityLink.ReviewStatus.VERIFIED,
+            review_status__in=[
+                InterviewEntityLink.ReviewStatus.VERIFIED,
+                InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+            ],
             interview__source_present=True,
             interview__publication_status=Interview.PublicationStatus.AUTHORIZED_TEXT,
             interview__classification_status=Interview.ClassificationStatus.INTERVIEW,

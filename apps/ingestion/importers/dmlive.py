@@ -502,6 +502,8 @@ class DMLiveImporter:
                 len(section.paragraphs) for section in state["page"].sections
             )
             transcript = transcript_by_interview[state["interview"].pk]
+            if state["page"].transcript_language:
+                transcript.language = state["page"].transcript_language
             transcript.status = (
                 Interview.TranscriptStatus.COMPLETE
                 if has_transcript
@@ -514,7 +516,9 @@ class DMLiveImporter:
             state["interview"].transcript_status = transcript.status
             summary.sections_created += len(state["page"].sections)
             summary.paragraphs_created += paragraph_count
-        Transcript.objects.bulk_update(transcript_updates, ["status", "updated_at"])
+        Transcript.objects.bulk_update(
+            transcript_updates, ["language", "status", "updated_at"]
+        )
         Interview.objects.bulk_update(
             [state["interview"] for state in changed_states], ["transcript_status"]
         )
@@ -758,7 +762,9 @@ class DMLiveImporter:
             if total_paragraphs
             else Interview.TranscriptStatus.MISSING
         )
-        transcript.save(update_fields=["status", "updated_at"])
+        if page.transcript_language:
+            transcript.language = page.transcript_language
+        transcript.save(update_fields=["language", "status", "updated_at"])
         interview.transcript_status = transcript.status
 
     def _write_raw_snapshot(self, page: ParsedPage, content_hash: str) -> str:

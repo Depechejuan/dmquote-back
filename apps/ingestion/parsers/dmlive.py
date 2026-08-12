@@ -19,6 +19,24 @@ _EXTERNAL_LINK_RE = re.compile(r"\[([^\s\]]+)(?:\s+([^\]]+))?\]")
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _TEMPLATE_RE = re.compile(r"\{\{[^{}]*\}\}")
 _TAG_RE = re.compile(r"<[^>]+>")
+_TRANSLATION_NOTICE_RE = re.compile(
+    r"\{\{\s*Translation\s+notice\s*\|\s*([^}|]+)", re.IGNORECASE
+)
+_TRANSCRIPT_HEADING_LANGUAGE_RE = re.compile(
+    r"^transcript\s*\(([^)]+)\)\s*$", re.IGNORECASE
+)
+
+_LANGUAGE_NAMES = {
+    "english": "en",
+    "español": "es",
+    "french": "fr",
+    "français": "fr",
+    "german": "de",
+    "deutsch": "de",
+    "italian": "it",
+    "portuguese": "pt",
+    "spanish": "es",
+}
 
 
 @dataclass(frozen=True)
@@ -48,6 +66,7 @@ class ParsedPage:
     text: str
     categories: tuple[str, ...]
     sections: tuple[ParsedSection, ...]
+    transcript_language: str | None = None
 
     @property
     def speakers(self) -> tuple[str, ...]:
@@ -157,7 +176,37 @@ def _build_page(
         text=text,
         categories=categories,
         sections=sections,
+        transcript_language=detect_transcript_language(text, sections),
     )
+
+
+def detect_transcript_language(
+    text: str, sections: tuple[ParsedSection, ...] | list[ParsedSection] | None = None
+) -> str | None:
+    """Read an explicitly declared transcript language from DM Live wikitext."""
+
+    notice = _TRANSLATION_NOTICE_RE.search(text)
+    if notice:
+        language = normalize_language_name(notice.group(1))
+        if language:
+            return language
+
+    for section in sections or ():
+        heading_match = _TRANSCRIPT_HEADING_LANGUAGE_RE.fullmatch(section.heading.strip())
+        if heading_match:
+            language = normalize_language_name(heading_match.group(1))
+            if language:
+                return language
+    return None
+
+
+def normalize_language_name(value: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", value.strip().casefold())
+    if normalized in _LANGUAGE_NAMES:
+        return _LANGUAGE_NAMES[normalized]
+    if re.fullmatch(r"[a-z]{2,3}(?:-[a-z]{2,4})?", normalized):
+        return normalized
+    return None
 
 
 def parse_wikitext_sections(text: str) -> list[ParsedSection]:
