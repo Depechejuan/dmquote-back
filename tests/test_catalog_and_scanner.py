@@ -192,7 +192,7 @@ def test_scanner_prioritizes_internal_links_and_skips_ambiguous_text(tmp_path):
     links = list(InterviewEntityLink.objects.order_by("start_offset"))
     assert {link.song_id for link in links if link.song_id} == {song.id}
     assert {link.album_id for link in links if link.album_id} == {album.id}
-    assert all(link.review_status == InterviewEntityLink.ReviewStatus.SUGGESTED for link in links)
+    assert all(link.review_status == InterviewEntityLink.ReviewStatus.NEEDS_REVIEW for link in links)
     assert all(len(link.evidence) <= 280 for link in links)
     assert all(paragraph.text[link.start_offset : link.end_offset] in {"New Life", "Violator"} for link in links)
     assert not InterviewEntityLink.objects.filter(song=home).exists()
@@ -347,7 +347,7 @@ def test_scanner_builds_qa_excerpt_from_question_and_answer_paragraphs():
     links = list(InterviewEntityLink.objects.order_by("start_offset"))
     assert len(links) == 2
     assert all(link.excerpt_type == InterviewEntityLink.ExcerptType.QA for link in links)
-    assert all(link.review_status == InterviewEntityLink.ReviewStatus.SUGGESTED for link in links)
+    assert all(link.review_status == InterviewEntityLink.ReviewStatus.NEEDS_REVIEW for link in links)
     assert all(link.question_paragraph_id == question.id for link in links)
     assert all(link.answer_paragraph_id == answer.id for link in links)
 
@@ -473,9 +473,46 @@ def test_scan_preserves_repeated_mentions_and_verified_links():
     second = scan_mentions()
     links = list(InterviewEntityLink.objects.filter(song=song).order_by("start_offset"))
     assert second.suggestions_created == 0
-    assert second.suggestions_existing == 1
+    assert second.suggestions_existing == 2
     assert len(links) == 2
     assert links[0].review_status == InterviewEntityLink.ReviewStatus.VERIFIED
+
+
+@pytest.mark.django_db
+def test_scanner_skips_matches_before_song_and_album_release_years():
+    album = Album.objects.create(title="Future Album", slug="future-album", release_year=2013)
+    song = Song.objects.create(title="Always", slug="always", album=album, release_year=2013)
+    interview = Interview.objects.create(
+        title="2009-04-17 La Saga, RTL, Paris, France",
+        slug="2009-04-17-la-saga",
+        date_year=2009,
+        source_url="https://dmlive.wiki/wiki/2009-04-17_La_Saga",
+        source_page_id=4293,
+    )
+    transcript = Transcript.objects.create(interview=interview)
+    section = TranscriptSection.objects.create(
+        transcript=transcript,
+        order=1,
+        heading="Transcript",
+        section_type=TranscriptSection.SectionType.TRANSCRIPT,
+    )
+    TranscriptParagraph.objects.create(
+        transcript=transcript,
+        section=section,
+        order=1,
+        text="We discussed Always and Future Album.",
+    )
+
+    summary = scan_mentions()
+
+    assert summary.candidates_found == 0
+    assert not InterviewEntityLink.objects.exists()
+
+    interview.date_year = 2013
+    interview.save(update_fields=["date_year"])
+    scan_mentions()
+
+    assert InterviewEntityLink.objects.filter(song=song).exists()
 
 
 @pytest.mark.django_db

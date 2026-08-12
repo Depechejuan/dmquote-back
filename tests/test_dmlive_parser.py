@@ -90,6 +90,25 @@ def test_mediawiki_parser_extracts_sections_speakers_and_categories(tmp_path):
     assert "Original source (https://example.test/source)" in page.sections[2].paragraphs[0].text
 
 
+def test_mediawiki_parser_detects_declared_transcript_language(tmp_path):
+    path = tmp_path / "french.xml"
+    write_xml(
+        path,
+        [
+            page_xml(
+                4293,
+                38073,
+                "2009-04-17 La Saga, RTL, Paris, France",
+                interview_text("\n{{Translation notice|French}}"),
+            )
+        ],
+    )
+
+    page = next(parse_source_file(path))
+
+    assert page.transcript_language == "fr"
+
+
 def test_json_parser_accepts_equivalent_page_shape(tmp_path):
     path = tmp_path / "export.json"
     path.write_text(

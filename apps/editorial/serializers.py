@@ -215,6 +215,7 @@ class EditorialMentionSerializer(serializers.ModelSerializer):
     )
     source = SourceAttributionSerializer(source="interview", read_only=True)
     paragraph_order = serializers.SerializerMethodField()
+    context = serializers.SerializerMethodField()
 
     class Meta:
         model = InterviewEntityLink
@@ -238,11 +239,30 @@ class EditorialMentionSerializer(serializers.ModelSerializer):
             "evidence",
             "paragraph_content_hash",
             "source",
+            "context",
         ]
 
     @extend_schema_field(serializers.IntegerField(allow_null=True))
     def get_paragraph_order(self, obj):
         return obj.paragraph.order if obj.paragraph_id else None
+
+    @extend_schema_field(EditorialParagraphSerializer(many=True))
+    def get_context(self, obj):
+        """Return the cited paragraph with one neighbor on either side."""
+
+        paragraph = obj.paragraph
+        if paragraph is None or obj.section is None:
+            return []
+        paragraphs = list(paragraph.section.paragraphs.all())
+        try:
+            index = next(index for index, item in enumerate(paragraphs) if item.pk == paragraph.pk)
+        except StopIteration:
+            return [EditorialParagraphSerializer(paragraph, context=self.context).data]
+        start = max(0, index - 1)
+        end = min(len(paragraphs), index + 2)
+        return EditorialParagraphSerializer(
+            paragraphs[start:end], many=True, context=self.context
+        ).data
 
 
 class EditorialMentionUpdateSerializer(serializers.Serializer):

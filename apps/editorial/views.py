@@ -46,6 +46,7 @@ def editorial_queryset():
             "question_paragraph",
             "answer_paragraph",
         )
+        .prefetch_related("section__paragraphs")
         .prefetch_related("interview__participant_links__person")
         .order_by("-interview__date_year", "interview__title", "id")
     )
@@ -291,10 +292,23 @@ def editorial_interview_detail(request, slug):
             "participant_links__person",
             Prefetch("transcript__sections", queryset=section_queryset),
             "transcript__translation_requests",
+            Prefetch(
+                "entity_links",
+                queryset=editorial_queryset()
+                .filter(interview__slug=slug)
+                .prefetch_related("section__paragraphs"),
+                to_attr="editorial_entity_links",
+            ),
         ),
         slug=slug,
     )
-    return Response(EditorialInterviewSerializer(interview, context={"request": request}).data)
+    response = EditorialInterviewSerializer(interview, context={"request": request}).data
+    response["mentions"] = EditorialMentionSerializer(
+        getattr(interview, "editorial_entity_links", []),
+        many=True,
+        context={"request": request},
+    ).data
+    return Response(response)
 
 
 @extend_schema(

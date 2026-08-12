@@ -331,3 +331,34 @@ def test_interview_review_queue_filters_by_year_song_and_album(staff_api_client)
 
     invalid = staff_api_client.get(f"{base_url}&mention_kind=unknown&mention_id={album.id}")
     assert invalid.status_code == 400
+
+
+@pytest.mark.django_db
+def test_editorial_interview_detail_returns_match_context(staff_api_client):
+    album = Album.objects.create(title="Ultra Context", slug="ultra-context")
+    song = Song.objects.create(title="New Life Context", slug="new-life-context", album=album)
+    interview, transcript, section, question, answer = make_editorial_interview(
+        page_id=907, title="1981 Context interview"
+    )
+    link = InterviewEntityLink.objects.create(
+        interview=interview,
+        song=song,
+        section=section,
+        paragraph=answer,
+        scope=InterviewEntityLink.Scope.PARAGRAPH,
+        review_status=InterviewEntityLink.ReviewStatus.NEEDS_REVIEW,
+        excerpt_type=InterviewEntityLink.ExcerptType.PARAGRAPH,
+        start_offset=0,
+        end_offset=7,
+        evidence=answer.text[:7],
+        paragraph_content_hash=hash_text(answer.text),
+    )
+
+    response = staff_api_client.get(f"/api/v1/editorial/interviews/{interview.slug}/")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["mentions"]] == [link.id]
+    assert [item["id"] for item in response.json()["mentions"][0]["context"]] == [
+        question.id,
+        answer.id,
+    ]
