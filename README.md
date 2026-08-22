@@ -142,6 +142,15 @@ The public backend root is `https://dmquote-back.vercel.app/` and returns
 `https://dmquote-back.vercel.app/api/v1`; Admin/login is at
 `https://dmquote-back.vercel.app/dmlog/`.
 
+## Frontend editorial access
+
+Editorial users still authenticate only through Django Admin at `/dmlog/`. After
+that session is active, the frontend calls `POST /api/v1/auth/token/` and stores
+the returned DRF token locally. Editorial requests send it as
+`Authorization: Token <token>`, so interview and mention edits remain independent
+of the Django Admin screens. Tokens can be revoked by deleting the user's token
+record from the backend.
+
 Run migrations against Neon from a trusted local environment or a controlled
 release job before testing the public deployment. Do not configure the import
 or superuser-creation commands as a Vercel request handler.

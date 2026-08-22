@@ -2,7 +2,7 @@ from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework.authentication import SessionAuthentication
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAdminUser
@@ -20,6 +20,7 @@ from .serializers import (
     EditorialCatalogSerializer,
     EditorialInterviewQueueSerializer,
     EditorialInterviewSerializer,
+    EditorialInterviewUpdateSerializer,
     EditorialMentionCreateSerializer,
     EditorialMentionSerializer,
     EditorialMentionUpdateSerializer,
@@ -31,7 +32,7 @@ from .serializers import (
     PublicationVisibilitySerializer,
 )
 
-EDITORIAL_AUTHENTICATION = [SessionAuthentication]
+EDITORIAL_AUTHENTICATION = [TokenAuthentication, SessionAuthentication]
 EDITORIAL_PERMISSIONS = [IsAdminUser]
 
 
@@ -196,6 +197,7 @@ def editorial_queue(request):
         ),
         OpenApiParameter(name="search", type=str, required=False),
         OpenApiParameter(name="date_year", type=int, required=False),
+        OpenApiParameter(name="interview_slug", type=str, required=False),
         OpenApiParameter(
             name="mention_kind",
             type=str,
@@ -230,6 +232,10 @@ def editorial_interview_reviews(request):
     queryset, filter_error = apply_editorial_review_filters(queryset, request)
     if filter_error:
         return filter_error
+
+    interview_slug = request.query_params.get("interview_slug", "").strip()
+    if interview_slug:
+        queryset = queryset.filter(slug=interview_slug)
 
     search = request.query_params.get("search", "").strip()
     if search:
@@ -280,9 +286,10 @@ def editorial_catalog(request):
 
 
 @extend_schema(
+    request=EditorialInterviewUpdateSerializer,
     responses={200: EditorialInterviewSerializer, 404: OpenApiResponse(description="Interview not found.")}
 )
-@api_view(["GET"])
+@api_view(["GET", "PATCH"])
 @authentication_classes(EDITORIAL_AUTHENTICATION)
 @permission_classes(EDITORIAL_PERMISSIONS)
 def editorial_interview_detail(request, slug):
@@ -302,6 +309,25 @@ def editorial_interview_detail(request, slug):
         ),
         slug=slug,
     )
+    if request.method == "PATCH":
+        serializer = EditorialInterviewUpdateSerializer(interview, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        interview = serializer.save()
+        interview = get_object_or_404(
+            Interview.objects.select_related("mention_review").prefetch_related(
+                "participant_links__person",
+                Prefetch("transcript__sections", queryset=section_queryset),
+                "transcript__translation_requests",
+                Prefetch(
+                    "entity_links",
+                    queryset=editorial_queryset()
+                    .filter(interview__slug=slug)
+                    .prefetch_related("section__paragraphs"),
+                    to_attr="editorial_entity_links",
+                ),
+            ),
+            slug=slug,
+        )
     return Response(EditorialInterviewSerializer(interview, context={"request": request}).data)
 
 

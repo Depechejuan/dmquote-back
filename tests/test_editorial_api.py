@@ -1,5 +1,6 @@
 import pytest
 from django.contrib.auth import get_user_model
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from apps.catalog.models import Album, Song
@@ -69,6 +70,45 @@ def test_editorial_endpoints_require_staff_and_csrf_endpoint_sets_token():
 
 
 @pytest.mark.django_db
+def test_admin_session_can_issue_a_frontend_access_token_and_token_can_read_editorial_data(
+    staff_api_client,
+):
+    user = get_user_model().objects.get(username="editorial-staff")
+    response = staff_api_client.post("/api/v1/auth/token/", {}, format="json")
+
+    assert response.status_code == 200
+    token = Token.objects.get(user=user)
+    assert response.json() == {
+        "token": token.key,
+        "user": user.username,
+        "is_staff": True,
+    }
+
+    token_client = APIClient()
+    token_client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+    current_user = token_client.get("/api/v1/auth/me/")
+    assert current_user.status_code == 200
+    assert current_user.json()["username"] == user.username
+    assert token_client.get("/api/v1/editorial/queue/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_non_staff_cannot_issue_a_frontend_access_token():
+    user = get_user_model().objects.create_user(
+        username="regular-user",
+        email="regular@example.test",
+        password="test-password",
+    )
+    client = APIClient()
+    assert client.login(username=user.username, password="test-password")
+
+    response = client.post("/api/v1/auth/token/", {}, format="json")
+
+    assert response.status_code in {401, 403}
+    assert not Token.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
 def test_editorial_queue_can_update_target_excerpt_and_status(staff_api_client):
     album = Album.objects.create(title="Speak & Spell", slug="speak-and-spell-editorial")
     song = Song.objects.create(
@@ -129,6 +169,30 @@ def test_editorial_queue_can_update_target_excerpt_and_status(staff_api_client):
 
     song_response = staff_api_client.get(f"/api/v1/songs/{song.slug}/")
     assert song_response.json()["is_b_side"] is True
+
+
+@pytest.mark.django_db
+def test_editorial_panel_can_update_interview_metadata(staff_api_client):
+    interview, _, _, _, _ = make_editorial_interview(page_id=904)
+
+    response = staff_api_client.patch(
+        f"/api/v1/editorial/interviews/{interview.slug}/",
+        {
+            "title": "1981 Updated interview",
+            "date_year": 1982,
+            "date_precision": "year",
+            "outlet": "Updated outlet",
+            "notes": "Edited independently from the frontend.",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200, response.content
+    interview.refresh_from_db()
+    assert interview.title == "1981 Updated interview"
+    assert interview.date_year == 1982
+    assert interview.outlet == "Updated outlet"
+    assert interview.notes == "Edited independently from the frontend."
 
 
 @pytest.mark.django_db

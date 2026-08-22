@@ -212,6 +212,41 @@ class EditorialInterviewSerializer(serializers.ModelSerializer):
         ).data
 
 
+class EditorialInterviewUpdateSerializer(serializers.ModelSerializer):
+    """Fields that staff may edit from the standalone frontend editorial panel."""
+
+    audio_url = serializers.URLField(required=False, allow_blank=True)
+    source_url = serializers.URLField(required=False)
+
+    class Meta:
+        model = Interview
+        fields = [
+            "title",
+            "date_year",
+            "date_month",
+            "date_day",
+            "date_precision",
+            "outlet",
+            "medium",
+            "location",
+            "source_url",
+            "audio_url",
+            "notes",
+            "classification_status",
+            "transcript_status",
+        ]
+
+    def update(self, instance, validated_data):
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        try:
+            instance.full_clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict) from exc
+        instance.save()
+        return instance
+
+
 class EditorialInterviewQueueSerializer(InterviewListSerializer):
     """An interview-led queue, including records with no detected mentions."""
 

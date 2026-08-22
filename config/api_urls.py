@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from apps.accounts.views import current_user, issue_access_token
 from apps.catalog.views import AlbumViewSet, SongViewSet, music_catalog
 from apps.editorial.views import (
     editorial_catalog,
@@ -25,6 +26,8 @@ router.register("songs", SongViewSet, basename="song")
 router.register("albums", AlbumViewSet, basename="album")
 
 urlpatterns = [
+    path("auth/me/", current_user, name="current-user"),
+    path("auth/token/", issue_access_token, name="issue-access-token"),
     path("editorial/csrf/", editorial_csrf, name="editorial-csrf"),
     path("editorial/queue/", editorial_queue, name="editorial-queue"),
     path(
